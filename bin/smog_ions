@@ -1,0 +1,14 @@
+#!/bin/bash
+export PERLLIB=/app/src:
+export PERL5LIB=/app/src:
+export SMOG_PATH=/app
+if [ -f $SMOG_PATH/.gitcommit ]
+then
+        export SMOG_COMMIT=`cat $SMOG_PATH/.gitcommit`
+
+elif [ -d $SMOG_PATH/.git ]
+then
+        export SMOG_COMMIT=`cd $SMOG_PATH; git show --format="%H" --no-patch`
+fi
+export perl4smog=/usr/bin/perl
+/usr/bin/perl /app/src/tools/ions "$@"
