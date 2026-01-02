@@ -44,7 +44,7 @@ our %NBtypespresent;
 # what is the minimum version of OS that the OS models should be used with.
 # while it can be possible to use an earlier version of OS, it is likely to have 
 # problems
-my $minOSversion="1.1.2";
+my $minOSversion="1.3";
 ########## OpenSMOG routines
 
 sub OShashAddFunction{
