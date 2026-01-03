@@ -127,6 +127,9 @@ sub AddInteractionOShash{
 # @stuff is the array that contains the following information: i, [j,k,j,] interaction type, function name, @parameter (in the order found in $OSref->{$type}->{$name}->{parameters} array)
 	my %tmphash;
 	$tmphash{"i"}=$stuff[0];
+	if ($inttype eq "contact"){
+		$tmphash{"j"}=$stuff[1];
+	}
 	if ($inttype eq "angle"){
 		$tmphash{"j"}=$stuff[1];
 		$tmphash{"k"}=$stuff[2];
