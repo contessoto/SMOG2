@@ -33,7 +33,7 @@ use Exporter;
 use XML::Simple qw(:strict);
 use XML::LibXML;
 our @ISA = 'Exporter';
-our @EXPORT = qw(OShashAddFunction OShashAddConstants OShashAddNBFunction OpenSMOGfunctionExists checkOpenSMOGparam AddInteractionOShash AddDihedralOShash AddNonbondOShash AddSettingsOShash readOpenSMOGxml OpenSMOGwriteXML OpenSMOGextractXML OpenSMOGscaleXML OpenSMOGscaleXMLcl newOpenSMOGfunction OpenSMOGAddNBsettoXML %fTypes %fTypesArgNum %OSrestrict);
+our @EXPORT = qw(OShashAddFunction OShashAddRestraintFunction OShashAddConstants OShashAddNBFunction OpenSMOGfunctionExists checkOpenSMOGparam AddInteractionOShash AddDihedralOShash AddNonbondOShash AddSettingsOShash readOpenSMOGxml OpenSMOGwriteXML OpenSMOGextractXML OpenSMOGscaleXML OpenSMOGscaleXMLcl newOpenSMOGfunction OpenSMOGAddNBsettoXML %fTypes %fTypesArgNum %OSrestrict);
 our %fTypes;
 our %fTypesArgNum;
 our $OpenSMOG;
@@ -61,6 +61,28 @@ sub OShashAddFunction{
 		push(@{$ref->{parameter}},"$en");
 	}
 }
+
+sub OShashAddRestraintFunction{
+	my ($OSref,$weight)=@_;
+	my $type="externals";
+	my $namebase="restraints";
+	my $resNum=0;
+	my $name=$namebase . $resNum;
+	while(defined $OSref->{$type}->{$type . "_type"}->{$name}){
+		$resNum++;
+		$name=$namebase . $resNum;
+	}
+	print "Restraints will be added to force \"$name\" to the XML file.\n";
+	my $ref=\%{$OSref->{$type}->{$type . "_type"}->{$name}};
+	$ref->{expression}->{"expr"}="$weight/2.0*((x-x0)^2+(y-y0)^2+(z-z0)^2)";
+	#$ref->{exclusions}->{"generate"}=$exclusions;
+	my @params=("x0","y0","z0");
+	foreach my $en(@params){
+		push(@{$ref->{parameter}},"$en");
+	}
+	return $name;
+}
+
 
 sub OShashAddNBFunction{
 	my ($OSref,$interactions)=@_;
@@ -95,19 +117,22 @@ sub AddInteractionOShash{
 		$nameindex=3;
 	}elsif ($inttype eq "dihedral"){
 		$nameindex=4;
+	}elsif ($inttype eq "external"){
+		$nameindex=1;
 	}else{
 		smog_quit("Internal error: OS Interactions hash issue 1");
 	}
 
 	my $ref=\%{$OSref->{$stuff[$nameindex]}->{$stuff[$nameindex] . "_type"}->{$stuff[$nameindex+1]}};
-# @stuff is the array that contains the following information: i, j, interaction type, function name, @parameter (in the order found in $OSref->{$type}->{$name}->{parameters} array)
+# @stuff is the array that contains the following information: i, [j,k,j,] interaction type, function name, @parameter (in the order found in $OSref->{$type}->{$name}->{parameters} array)
 	my %tmphash;
 	$tmphash{"i"}=$stuff[0];
-	$tmphash{"j"}=$stuff[1];
 	if ($inttype eq "angle"){
+		$tmphash{"j"}=$stuff[1];
 		$tmphash{"k"}=$stuff[2];
 	}
 	if ($inttype eq "dihedral"){
+		$tmphash{"j"}=$stuff[1];
 		$tmphash{"k"}=$stuff[2];
 		$tmphash{"l"}=$stuff[3];
 	}
@@ -182,7 +207,7 @@ sub OpenSMOGwriteXML{
 
 		foreach my $type(sort keys %{$handle0}){
 			if($type eq "contacts" or $type eq "dihedrals" or $type eq "angles" or $type eq "externals"){
-				$xmlout .= OpenSMOGwriteXMLinteractions($type,$handle0,$type,$space);
+				$xmlout .= OpenSMOGwriteXMLinteractions($type,$handle0,$space);
 			}elsif($type eq "constants"){
 				$xmlout .= OpenSMOGwriteXMLconstants($handle0,$type,$space);
 			}elsif($type eq "nonbond"){
@@ -234,18 +259,18 @@ sub OpenSMOGwriteXMLconstants{
 }
 
 sub OpenSMOGwriteXMLinteractions{
-	my ($inttype,$handle0,$type,$space)=@_;
+	my ($type,$handle0,$space)=@_;
 	my $ones="$space";
 	my $twos="$space$space";
 	my $threes="$space$space$space";
 	my @interactingindices;
-	if($inttype eq "contacts"){
+	if($type eq "contacts"){
 		@interactingindices=("i","j");
-	}elsif($inttype eq "angles"){
+	}elsif($type eq "angles"){
 		@interactingindices=("i","j","k");
-	}elsif($inttype eq "dihedrals"){
+	}elsif($type eq "dihedrals"){
 		@interactingindices=("i","j","k","l");
-	}elsif($inttype eq "externals"){
+	}elsif($type eq "externals"){
 		@interactingindices=("i");
 	}else{
 		smog_quit("Internal error: XML writing error 1");
@@ -956,10 +981,8 @@ sub checkXMLfactor {
 	}
 }
 
-
-
 sub OpenSMOGextractXML{
-	my ($OSref,$OpenSMOGxml,$keepatoms,$typesinsystem,$header)=@_;
+	my ($OSref,$keepatoms,$typesinsystem)=@_;
         # OSref is a handle to the hash holding all information to be written.
         # $OpenSMOGxml is the output file name
 	# Only load the module if we are writing an OpenSMOG file
@@ -970,7 +993,6 @@ sub OpenSMOGextractXML{
 	OpenSMOGextractContacts($OSref,$keepatoms);
 	OpenSMOGextractDihedrals($OSref,$keepatoms);
 	OpenSMOGextractNonBonds($OSref,$keepatoms,$typesinsystem);
-	OpenSMOGwriteXML($OSref,$OpenSMOGxml,$header,);
 	return \%OpenSMOGatoms2restrain;
 }
 
