@@ -6,7 +6,8 @@
 #                          Ailun Wang, Heiko Lammert, Ryan Hayes,
 #                               Jose Onuchic & Paul Whitford
 #
-#      Copyright (c) 2015,2016,2018,2021,2022,2023,2024 The SMOG development team at
+#                 Copyright (c) 2015,2016,2018,2021,2022,2023,2024,2026 
+#                              The SMOG development team at
 #                      The Center for Theoretical Biological Physics
 #                       Rice University and Northeastern University
 #
@@ -993,10 +994,57 @@ sub OpenSMOGextractXML{
         if(length($checkPackage) > 0) { smog_quit("Perl module XML::LibXML not installed. Since you are using OpenSMOG, we can not continue...")}
         # this was a workaround to a cryptic shared variable error in perl
 	use if 0==0 , "XML::LibXML";
+	OpenSMOGextractAngles($OSref,$keepatoms);
 	OpenSMOGextractContacts($OSref,$keepatoms);
 	OpenSMOGextractDihedrals($OSref,$keepatoms);
+	OpenSMOGextractExternals($OSref,$keepatoms);
 	OpenSMOGextractNonBonds($OSref,$keepatoms,$typesinsystem);
 	return \%OpenSMOGatoms2restrain;
+}
+
+
+sub OpenSMOGextractAngles{
+	my ($OSref,$keepatoms)=@_;
+	my $type="angles";
+	if(defined $OSref->{$type}){
+		print "Angles found in OpenSMOG XML file.  Will extract.\n";
+		my $handle1=$OSref->{$type};
+		foreach my $subtype(sort keys %{$handle1}){
+		   	my $handle2=$handle1->{$subtype};
+		   	foreach my $name(sort keys %{$handle2}){
+		   		my $handle3=$handle2->{"$name"}->{interaction};
+		   	     	for (my $I=0;$I<=$#{$handle3};$I++){
+					if(OpenSMOGkeepAngle(${$handle3}[$I],$keepatoms)){
+						delete ${$handle3}[$I];
+						# if evals to 1, then delete
+					}
+					# this renumbers, or removes the interaction
+		   	     	}
+        	   	 }
+		}
+	}
+}
+
+sub OpenSMOGextractExternals{
+	my ($OSref,$keepatoms)=@_;
+	my $type="externals";
+	if(defined $OSref->{$type}){
+		print "Externals found in OpenSMOG XML file.  Will extract.\n";
+		my $handle1=$OSref->{$type};
+		foreach my $subtype(sort keys %{$handle1}){
+		   	my $handle2=$handle1->{$subtype};
+		   	foreach my $name(sort keys %{$handle2}){
+		   		my $handle3=$handle2->{"$name"}->{interaction};
+		   	     	for (my $I=0;$I<=$#{$handle3};$I++){
+					if(OpenSMOGkeepExternal(${$handle3}[$I],$keepatoms)){
+						delete ${$handle3}[$I];
+						# if evals to 1, then delete
+					}
+					# this renumbers, or removes the interaction
+		   	     	}
+        	   	 }
+		}
+	}
 }
 
 sub OpenSMOGextractContacts{
@@ -1083,6 +1131,29 @@ sub OpenSMOGkeepContact {
 	return 1;
 }
 
+sub OpenSMOGkeepAngle {
+	my ($tmphash,$keepatoms)=@_;
+        if(exists $keepatoms->{$tmphash->{"i"}} && exists $keepatoms->{$tmphash->{"j"}} && exists $keepatoms->{$tmphash->{"k"}} ){
+		$tmphash->{"i"}=$keepatoms->{$tmphash->{"i"}};
+		$tmphash->{"j"}=$keepatoms->{$tmphash->{"j"}};
+		$tmphash->{"k"}=$keepatoms->{$tmphash->{"k"}};
+		return 0;
+	}else{
+		if(exists $keepatoms->{$tmphash->{"i"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"i"}}}=1;
+		}
+		if(exists $keepatoms->{$tmphash->{"j"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"j"}}}=1;
+		}
+
+		if(exists $keepatoms->{$tmphash->{"k"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"k"}}}=1;
+		}
+	}
+	return 1;
+}
+
+
 sub OpenSMOGkeepDihedral {
 	my ($tmphash,$keepatoms)=@_;
         if(exists $keepatoms->{$tmphash->{"i"}} && exists $keepatoms->{$tmphash->{"j"}} && exists $keepatoms->{$tmphash->{"k"}} && exists $keepatoms->{$tmphash->{"l"}}){
@@ -1108,6 +1179,18 @@ sub OpenSMOGkeepDihedral {
 	}
 	return 1;
 }
+
+sub OpenSMOGkeepExternal {
+	my ($tmphash,$keepatoms)=@_;
+        if(exists $keepatoms->{$tmphash->{"i"}} ){
+		$tmphash->{"i"}=$keepatoms->{$tmphash->{"i"}};
+		return 0;
+	}else{
+		return 1;
+	}
+}
+
+
 
 sub newOpenSMOGfunction{
 	my ($OpenSMOGhandle,$fh,$fN)=@_;
