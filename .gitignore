@@ -1,1 +1,8 @@
 .DS_Store
+SMOG-CHECK/full.*
+__pycache__/
+*.pyc
+build/
+smog3.egg-info/
+__pycache__/
+*.pyc
