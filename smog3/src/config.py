@@ -1,6 +1,6 @@
 import math
 
-VERSION = "2.6-beta"
+VERSION = "2.7beta"
 PI = 3.14159265358979
 
 # OpenSMOG restricted names
@@ -43,6 +43,11 @@ def get_template_path():
     installed_share = os.path.join(sys.prefix, 'share', 'smog3', 'templates')
     if os.path.isdir(installed_share):
         return installed_share
+
+    # Fallback: check CWD/share/templates (useful if running from repo root)
+    cwd_share = os.path.join(os.getcwd(), 'share', 'templates')
+    if os.path.isdir(cwd_share):
+        return cwd_share
 
     # Fallback to current directory (legacy behavior)
     return os.getcwd()
