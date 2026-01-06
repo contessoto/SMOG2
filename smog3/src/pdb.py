@@ -143,7 +143,7 @@ def convert_pdb_to_gro_ndx(input_pdb, output_gro, output_g96, output_gro_scm, ou
             f.write(f"{len(atom_info)}\n")
             for atom in atom_info:
                 f.write(atom['line'])
-            f.write(f"{x_range:10.5f} {y_range:10.5f} {z_range:10.5f}\n")
+            f.write(f"{x_range:.5f} {y_range:.5f} {z_range:.5f}\n")
         print(f"{os.path.abspath(output_gro)} written")
 
     # Write Gro SCM
@@ -153,7 +153,7 @@ def convert_pdb_to_gro_ndx(input_pdb, output_gro, output_g96, output_gro_scm, ou
             f.write(f"{len(atom_info)}\n")
             for atom in atom_info:
                 f.write(atom['scm_line'])
-            f.write(f"{x_range:10.5f} {y_range:10.5f} {z_range:10.5f}\n")
+            f.write(f"{x_range:.5f} {y_range:.5f} {z_range:.5f}\n")
 
     # Write NDX
     if output_ndx:

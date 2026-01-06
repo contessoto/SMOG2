@@ -31,7 +31,7 @@ use warnings FATAL => 'all';
 use smog_common;
 use Exporter;
 use XML::Simple qw(:strict);
-use XML::LibXML;
+#use XML::LibXML;
 our @ISA = 'Exporter';
 our @EXPORT = qw(initOSrestrict %OSrestrict %NBtypespresent $PI);
 # make a list of names that can't be used as parameters in OpenSMOG.

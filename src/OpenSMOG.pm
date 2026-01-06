@@ -32,7 +32,7 @@ use SMOGglobals;
 use smog_common;
 use Exporter;
 use XML::Simple qw(:strict);
-use XML::LibXML;
+#use XML::LibXML;
 our @ISA = 'Exporter';
 our @EXPORT = qw(OShashAddFunction OShashAddRestraintFunction OShashAddConstants OShashAddNBFunction OpenSMOGfunctionExists checkOpenSMOGparam AddInteractionOShash AddDihedralOShash AddNonbondOShash AddSettingsOShash readOpenSMOGxml OpenSMOGwriteXML OpenSMOGextractXML OpenSMOGscaleXML OpenSMOGscaleXMLcl newOpenSMOGfunction OpenSMOGAddNBsettoXML %fTypes %fTypesArgNum %OSrestrict);
 our %fTypes;
@@ -991,9 +991,9 @@ sub OpenSMOGextractXML{
         # $OpenSMOGxml is the output file name
 	# Only load the module if we are writing an OpenSMOG file
  	my $checkPackage=`\$perl4smog -e "use XML::LibXML" 2>&1`;
-        if(length($checkPackage) > 0) { smog_quit("Perl module XML::LibXML not installed. Since you are using OpenSMOG, we can not continue...")}
+        #if(length($checkPackage) > 0) { smog_quit("Perl module XML::LibXML not installed. Since you are using OpenSMOG, we can not continue...")}
         # this was a workaround to a cryptic shared variable error in perl
-	use if 0==0 , "XML::LibXML";
+	#use if 0==0 , "XML::LibXML";
 	OpenSMOGextractAngles($OSref,$keepatoms);
 	OpenSMOGextractContacts($OSref,$keepatoms);
 	OpenSMOGextractDihedrals($OSref,$keepatoms);

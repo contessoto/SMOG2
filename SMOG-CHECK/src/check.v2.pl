@@ -728,13 +728,13 @@ sub allresidueschecked
 sub readtemplateresidues
 {
  # for each model, get the directory
- my $t=readnamesingletemplate("$SMOGDIR/SBM_AA");
+ my $t=readnamesingletemplate("$SMOGDIR/share/templates/SBM_AA");
  %seenresidueAA=%{$t};
- $t=readnamesingletemplate("$SMOGDIR/SBM_AA+gaussian");
+ $t=readnamesingletemplate("$SMOGDIR/share/templates/SBM_AA+gaussian");
  %seenresidueAAgauss=%{$t};
- $t=readnamesingletemplate("$SMOGDIR/SBM_calpha");
+ $t=readnamesingletemplate("$SMOGDIR/share/templates/SBM_calpha");
  %seenresidueCA=%{$t};
- $t=readnamesingletemplate("$SMOGDIR/SBM_calpha+gaussian");
+ $t=readnamesingletemplate("$SMOGDIR/share/templates/SBM_calpha+gaussian");
  %seenresidueCAgauss=%{$t};
 }
 

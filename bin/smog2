@@ -1,15 +1,5 @@
 #!/bin/bash
-# Wrapper script for SMOG 3 Python implementation
-# Sets up environment for SMOG-CHECK compatibility
-
-# Ensure python3 sees the smog3 package
-# Assuming this script is in /app/bin and smog3 is in /app
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-APP_DIR="$(dirname "$SCRIPT_DIR")"
-export PYTHONPATH="$APP_DIR:$PYTHONPATH"
-
-# Execute smog3
+export PYTHONPATH=$PYTHONPATH:/app
 python3 -m smog3.src.smog3 "$@"
-exit 0
-# The following line is used by smog-check to determine SMOG_PATH
-# /app/src/smogv2
+exit $?
+perl /app/src/smogv2 $@
