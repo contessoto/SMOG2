@@ -260,12 +260,6 @@ For help:
 smog3 --help
 
 
-EXAMPLES
-
-See `examples/OpenSMOG_Tutorial` for a walkthrough of generating an All-Atom model using SMOG 3.
-For more tutorials, visit https://smog-server.org/tutorials/
-
-
 For more advanced usage of SMOG 2, please consult the
 user manual.
 
