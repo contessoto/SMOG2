@@ -386,7 +386,7 @@ sub processsettings{
  my %dihhash;
  open(INSET,"$settings") or smog_quit("can not open $settings");
  my %tested;
- $settings ="";
+ $settings ="N\n";
  while(<INSET>){
   my %parhash;
   my @grparr;

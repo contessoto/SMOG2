@@ -6,7 +6,8 @@
 #                          Ailun Wang, Heiko Lammert, Ryan Hayes,
 #                               Jose Onuchic & Paul Whitford
 #
-#        Copyright (c) 2015,2016,2018,2021,2022,2024 The SMOG development team at
+#                   Copyright (c) 2015,2016,2018,2021,2022,2024,2026
+#                              The SMOG development team at
 #                      The Center for Theoretical Biological Physics
 #                       Rice University and Northeastern University
 #
@@ -34,7 +35,7 @@ use SMOGglobals;
 #####################
 # Init error vars   #
 #####################
-our $VERSION="2.6-beta";
+our $VERSION="2.7beta";
 our $maxwarn;
 our $warncount;
 our $allwarncount;
@@ -266,7 +267,7 @@ sub checkdirectives
 
 	for my $keys(keys %supported_directives){
 		if($supported_directives{$keys} == 1 && !exists $DIRLIST{$keys}){
-			smog_quit("Directive \"$keys\" not found in input .top file.",0);
+			smog_note("Directive \"$keys\" not found in input .top file. If you plan to use OpenSMOG, then it is possible that this info is in the XML file. Otherwise, these types of terms will simply not be present in your model.");
 		}
 		if($supported_directives{$keys} == 0 && exists $DIRLIST{$keys}){
 			smog_quit("Directive \"$keys\" not supported by script.");

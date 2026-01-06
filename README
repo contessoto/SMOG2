@@ -1,6 +1,6 @@
 ########################################################
 
-              README for SMOG 2 (v2.6-beta)
+              README for SMOG 2 (v2.7beta)
 
 SMOG 2 is a downloadable software package for 
 generating structure-based models, as provided by the 
@@ -23,7 +23,7 @@ provides a platform for performing SMOG models in OpenMM.
 
 This README provides the absolute basics for using
 SMOG 2.  For more advanced usage information, consult
-the manual, available at smog-server.org
+the manual and tutorials, available at smog-server.org
 
 We encourage everyone to provide feedback/suggestions
 on usage, extensions and bugs to info@smog-server.org,
@@ -157,7 +157,7 @@ run the configure script.
 When this is run, it will try to determine which version of
 Perl to use.  Specifically, it will use "which perl" to find
 the version, and  smog2 will be configured with this version.
-However, it is not uncommon that users have multiple  version
+However, it is not uncommon that users have multiple versions
 of Perl available, where the version found is smog-incompatible.
 If you know which version of Perl you want to run, you can
 export an environment variable, or set a variable  when sourcing.

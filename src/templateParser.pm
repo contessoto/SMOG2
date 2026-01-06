@@ -6,7 +6,8 @@
 #                          Ailun Wang, Heiko Lammert, Ryan Hayes,
 #                               Jose Onuchic & Paul Whitford
 #
-#        Copyright (c) 2015,2016,2018,2021,2022,2024 The SMOG development team at
+#                 Copyright (c) 2015,2016,2018,2021,2022,2023,2024,2026 
+#                              The SMOG development team at
 #                      The Center for Theoretical Biological Physics
 #                       Rice University and Northeastern University
 #
@@ -54,7 +55,7 @@ our $OpenSMOGpothash;
 
 my %SMOGversions;
 my $smi=0;
-foreach my $ver("2.0", "2.0.1", "2.0.2", "2.0.3", "2.1", "2.2", "2.3", "2.4", "2.4.1", "2.4.2","2.4.4","2.4.5","2.5","2.6-beta"){
+foreach my $ver("2.0", "2.0.1", "2.0.2", "2.0.3", "2.1", "2.2", "2.3", "2.4", "2.4.1", "2.4.2","2.4.4","2.4.5","2.5","2.6","2.7beta"){
  $SMOGversions{$ver}=$smi;
  $smi++; 
 }
@@ -329,10 +330,10 @@ sub checkAngleFunctionDef
 	if($nargs_exp != $nargs){
 		smog_quit("Wrong number of arguments for function type $funcname.\n\tExpected $nargs_exp\n\tFound $nargs\n\tSee following definition in .b file:\n\t$funcString\n")
 	}
-	if($nargs > 0 && $vars[0] =~ m/\?\?/){
-		smog_quit("Double question marks not allowed in angle definition.\nSee the following function defined in the .b file:\n\t$funcString\n");
+	if($nargs > 0 && ($vars[0] =~ m/\?\?/ || $vars[1] =~ m/\?\?/)){
+		smog_quit("Double question marks not allowed in angle function call.\nSee the following function defined in the .b file:\n\t$funcString\n");
 	}
-	if($#vars>0 && $vars[1] =~ m/\?/){
+	if($#vars>0 && $vars[1] =~ m/\?/ && ! exists $functions->{$funcname}->{"IsCustom"}){
 		smog_quit("Question marks not allowed in angle weight definition.\nSee the following function defined in the .b file:\n\t$funcString\n");
 	}
 }
