@@ -1,0 +1,34 @@
+################ DESCRIPTION ###############
+
+Example for generating and running a simulation with the All-atom model using SMOG 3 and OpenSMOG.
+
+############### PREREQUISITES ##############
+
+- SMOG 3 must be installed (`pip install .`)
+- Java (for contact map generation)
+- OpenSMOG (for running the simulation, optional for this generation step)
+
+######### USING SMOG 3 #######
+
+Begin with the file 2ci2.pdb.
+
+1. Preprocess the PDB file.
+   If you have the legacy `smog_adjustPDB` tool, you can use it.
+   Otherwise, ensure your PDB is clean (no water, standard naming).
+
+   (Assuming clean PDB for this example)
+   `cp 2ci2.pdb 2ci2.adjusted.pdb`
+
+2. Generate your force field with smog3:
+   - The -AA flag indicates that the Whitford '09 all-atom model should be used.
+
+   > smog3 -i 2ci2.adjusted.pdb -AA -dname 2ci2.OpenSMOG.AA
+
+   Note: SMOG 3 generates GROMACS-compatible files by default which are also compatible with OpenSMOG.
+
+#### RUNNING A SIMULATION WITH OPENSMOG ####
+
+At this point, you have all files needed to start your calculations in OpenSMOG.
+Use the provided script `run.ci2.OpenSMOG.AA.py` (placeholder) to run the simulation.
+
+> python run.ci2.OpenSMOG.AA.py

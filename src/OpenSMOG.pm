@@ -6,7 +6,8 @@
 #                          Ailun Wang, Heiko Lammert, Ryan Hayes,
 #                               Jose Onuchic & Paul Whitford
 #
-#      Copyright (c) 2015,2016,2018,2021,2022,2023,2024 The SMOG development team at
+#                 Copyright (c) 2015,2016,2018,2021,2022,2023,2024,2026 
+#                              The SMOG development team at
 #                      The Center for Theoretical Biological Physics
 #                       Rice University and Northeastern University
 #
@@ -33,7 +34,7 @@ use Exporter;
 use XML::Simple qw(:strict);
 use XML::LibXML;
 our @ISA = 'Exporter';
-our @EXPORT = qw(OShashAddFunction OShashAddConstants OShashAddNBFunction OpenSMOGfunctionExists checkOpenSMOGparam AddInteractionOShash AddDihedralOShash AddNonbondOShash AddSettingsOShash readOpenSMOGxml OpenSMOGwriteXML OpenSMOGextractXML OpenSMOGscaleXML OpenSMOGscaleXMLcl newOpenSMOGfunction OpenSMOGAddNBsettoXML %fTypes %fTypesArgNum %OSrestrict);
+our @EXPORT = qw(OShashAddFunction OShashAddRestraintFunction OShashAddConstants OShashAddNBFunction OpenSMOGfunctionExists checkOpenSMOGparam AddInteractionOShash AddDihedralOShash AddNonbondOShash AddSettingsOShash readOpenSMOGxml OpenSMOGwriteXML OpenSMOGextractXML OpenSMOGscaleXML OpenSMOGscaleXMLcl newOpenSMOGfunction OpenSMOGAddNBsettoXML %fTypes %fTypesArgNum %OSrestrict);
 our %fTypes;
 our %fTypesArgNum;
 our $OpenSMOG;
@@ -44,13 +45,13 @@ our %NBtypespresent;
 # what is the minimum version of OS that the OS models should be used with.
 # while it can be possible to use an earlier version of OS, it is likely to have 
 # problems
-my $minOSversion="1.1.2";
+my $minOSversion="1.3";
 ########## OpenSMOG routines
 
 sub OShashAddFunction{
 	my ($OSref,$type,$name,$expr,$params,$exclusions)=@_;
-	if($type ne "contacts" and $type ne "dihedrals"){
-		smog_quit("OpenSMOG currently only supports modified contact and dihedral potentials through \"functions\" declarations. Nonbonded custom potentials may be defined in the .nb file. Issue processing $name");
+	if($type ne "contacts" and $type ne "dihedrals" and $type ne "angles"){
+		smog_quit("OpenSMOG currently only supports modified contact, dihedral and angle potentials through \"functions\" declarations. Nonbonded custom potentials may be defined in the .nb file. Issue processing $name");
 	}
 	my $ref=\%{$OSref->{$type}->{$type . "_type"}->{$name}};
 	$ref->{expression}->{"expr"}=$expr;
@@ -61,6 +62,28 @@ sub OShashAddFunction{
 		push(@{$ref->{parameter}},"$en");
 	}
 }
+
+sub OShashAddRestraintFunction{
+	my ($OSref,$weight)=@_;
+	my $type="externals";
+	my $namebase="restraints";
+	my $resNum=0;
+	my $name=$namebase . $resNum;
+	while(defined $OSref->{$type}->{$type . "_type"}->{$name}){
+		$resNum++;
+		$name=$namebase . $resNum;
+	}
+	print "Restraints will be added to force \"$name\" to the XML file.\n";
+	my $ref=\%{$OSref->{$type}->{$type . "_type"}->{$name}};
+	$ref->{expression}->{"expr"}="$weight/2.0*((x-x0)^2+(y-y0)^2+(z-z0)^2)";
+	#$ref->{exclusions}->{"generate"}=$exclusions;
+	my @params=("x0","y0","z0");
+	foreach my $en(@params){
+		push(@{$ref->{parameter}},"$en");
+	}
+	return $name;
+}
+
 
 sub OShashAddNBFunction{
 	my ($OSref,$interactions)=@_;
@@ -91,18 +114,29 @@ sub AddInteractionOShash{
 	my $nameindex;
 	if($inttype eq "contact"){
 		$nameindex=2;
+	}elsif ($inttype eq "angle"){
+		$nameindex=3;
 	}elsif ($inttype eq "dihedral"){
 		$nameindex=4;
+	}elsif ($inttype eq "external"){
+		$nameindex=1;
 	}else{
 		smog_quit("Internal error: OS Interactions hash issue 1");
 	}
 
 	my $ref=\%{$OSref->{$stuff[$nameindex]}->{$stuff[$nameindex] . "_type"}->{$stuff[$nameindex+1]}};
-# @stuff is the array that contains the following information: i, j, interaction type, function name, @parameter (in the order found in $OSref->{$type}->{$name}->{parameters} array)
+# @stuff is the array that contains the following information: i, [j,k,j,] interaction type, function name, @parameter (in the order found in $OSref->{$type}->{$name}->{parameters} array)
 	my %tmphash;
 	$tmphash{"i"}=$stuff[0];
-	$tmphash{"j"}=$stuff[1];
+	if ($inttype eq "contact"){
+		$tmphash{"j"}=$stuff[1];
+	}
+	if ($inttype eq "angle"){
+		$tmphash{"j"}=$stuff[1];
+		$tmphash{"k"}=$stuff[2];
+	}
 	if ($inttype eq "dihedral"){
+		$tmphash{"j"}=$stuff[1];
 		$tmphash{"k"}=$stuff[2];
 		$tmphash{"l"}=$stuff[3];
 	}
@@ -149,7 +183,7 @@ sub readOpenSMOGxml {
 	my ($XMLin)=@_;
 	if(-f $XMLin){
 		my $xml = new XML::Simple;
-		my $data = $xml->XMLin($XMLin,KeyAttr=>{contacts_type=>"name",dihedrals_type=>"name",constant=>"name"},ForceArray=>["contacts_type","dihedrals_type","constant","parameter","interaction","nonbond_param"]);
+		my $data = $xml->XMLin($XMLin,KeyAttr=>{contacts_type=>"name",dihedrals_type=>"name",angles_type=>"name",externals_type=>"name",constant=>"name"},ForceArray=>["contacts_type","dihedrals_type","angles_type","externals_type","constant","parameter","interaction","nonbond_param"]);
 		return $data;
 	}else{
 		return 1;
@@ -176,8 +210,8 @@ sub OpenSMOGwriteXML{
 		my $handle0=$OSref;
 
 		foreach my $type(sort keys %{$handle0}){
-			if($type eq "contacts" or $type eq "dihedrals"){
-				$xmlout .= OpenSMOGwriteXMLinteractions($type,$handle0,$type,$space);
+			if($type eq "contacts" or $type eq "dihedrals" or $type eq "angles" or $type eq "externals"){
+				$xmlout .= OpenSMOGwriteXMLinteractions($type,$handle0,$space);
 			}elsif($type eq "constants"){
 				$xmlout .= OpenSMOGwriteXMLconstants($handle0,$type,$space);
 			}elsif($type eq "nonbond"){
@@ -229,15 +263,19 @@ sub OpenSMOGwriteXMLconstants{
 }
 
 sub OpenSMOGwriteXMLinteractions{
-	my ($inttype,$handle0,$type,$space)=@_;
+	my ($type,$handle0,$space)=@_;
 	my $ones="$space";
 	my $twos="$space$space";
 	my $threes="$space$space$space";
 	my @interactingindices;
-	if($inttype eq "contacts"){
+	if($type eq "contacts"){
 		@interactingindices=("i","j");
-	}elsif($inttype eq "dihedrals"){
+	}elsif($type eq "angles"){
+		@interactingindices=("i","j","k");
+	}elsif($type eq "dihedrals"){
 		@interactingindices=("i","j","k","l");
+	}elsif($type eq "externals"){
+		@interactingindices=("i");
 	}else{
 		smog_quit("Internal error: XML writing error 1");
 	}
@@ -429,7 +467,7 @@ sub OpenSMOGscaleXML{
         # OSref is a handle to the hash holding all information to be written.
         # $outputXML is the output file name
 	foreach my $I(sort keys %{$OSref}){
-		if($I eq "contacts" or $I eq "dihedrals"){
+		if($I eq "contacts" or $I eq "angles" or $I eq "dihedrals" or $I eq "externals"){
 			print("Modify $I parameters in the XML file (Y/N)?\n");
 			my $reply=getreply();
 			if($reply == 0){
@@ -455,6 +493,15 @@ sub OpenSMOGscaleXMLcl{
 		foreach my $key(keys %{$lhandle}){
 			modifyXMLdihedrals($lhandle->{$key},$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
 		}
+		$lhandle=$OSref->{"angles"}->{"angles_type"};
+		foreach my $key(keys %{$lhandle}){
+			modifyXMLangles($lhandle->{$key},$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
+		}
+		$lhandle=$OSref->{"externals"}->{"externals_type"};
+		foreach my $key(keys %{$lhandle}){
+			modifyXMLexternals($lhandle->{$key},$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
+		}
+
 	}else{
 		my $lhandle;
 		if (! defined $OSref->{$modifytype}->{"$modifytype\_type"}->{$modifyset}){
@@ -488,8 +535,8 @@ sub OpenSMOGscaleXMLcl{
 		}
 
 		print "Will adjust the following parameters:\n";
-		print "interactions : $modifytype\n";
-		print "type         : $modifyset\n";
+		print "type         : $modifytype\n";
+		print "set         : $modifyset\n";
 		if($modifytype eq "contacts"){
 			print "atom groups  : $modifygroup1 and $modifygroup2\n";
 		}else{
@@ -504,6 +551,10 @@ sub OpenSMOGscaleXMLcl{
 			modifyXMLcontacts($lhandle,$atomgroup,$modifygroup1,$modifygroup2,\%chghash,$remove,$mapping);
 		}elsif($modifytype eq "dihedrals"){
 			modifyXMLdihedrals($lhandle,$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
+		}elsif($modifytype eq "angles"){
+			modifyXMLangles($lhandle,$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
+		}elsif($modifytype eq "externals"){
+			modifyXMLexternals($lhandle,$atomgroup,$modifygroup1,\%chghash,$remove,$mapping);
 		}
 	}
 	OpenSMOGwriteXML($OSref,$outputXML,$header,);
@@ -570,38 +621,37 @@ sub rescaleXML{
 		print "\n";
 		# get the list of parameters, groups and factors for rescaling
 		my ($groupD,$groupC1,$groupC2,$chghash,$remove)=rescaleXMLsettings($lhandle,$type,$grp,$Ngrps,$grpnms,$groupnames,$atomgroup);
+
+		print "Will adjust the following parameters:\n";
+		print "type        : $type\n";
+		print "set         : $grp\n";
+		if(defined $remove){
+			print "change      : remove\n"
+		}
 		if($type eq "contacts"){
-			print "Will adjust the following parameters:\n";
-			print "interactions : $type\n";
-			print "type         : $grp\n";
-			print "atom groups  : $groupC1 and $groupC2\n";
-			if(!defined $remove){
-				print "parameter(s), modification factor(s):\n";
-				foreach my $param(sort keys %{$chghash}){
-					print "$param, $chghash->{$param}\n";
-				}
-			}else{
-				print "change       : remove\n"
-			}
-			modifyXMLcontacts($lhandle->{$grp},$atomgroup,$groupC1,$groupC2,$chghash,$remove,$mapping);
-			print "Contact modification completed\n\n";
-		}elsif($type eq "dihedrals"){
-			print "Will adjust the following parameters:\n";
-			print "type: $type\n";
-			print "set: $grp\n";
-			print "atom group: $groupD\n";
-			if(!defined $remove){
-				print "parameter(s), modification factor(s):\n";
-				foreach my $param(sort keys %{$chghash}){
-					print "$param, $chghash->{$param}\n";
-				}
-			}else{
-				print "change       : remove\n"
-			}
-			modifyXMLdihedrals($lhandle->{$grp},$atomgroup,$groupD,$chghash,$remove,$mapping);
+			print "atom groups : $groupC1 and $groupC2\n";
+		}elsif($type eq "angles" or $type eq "dihedrals" or $type eq "externals"){
+			print "atom group  : $groupD\n";
 		}else{
 			smog_quit("internal error: rescale XML selection issue.");
 		}
+
+		if(!defined $remove){
+			print "parameter(s), modification factor(s):\n";
+			foreach my $param(sort keys %{$chghash}){
+				print "$param, $chghash->{$param}\n";
+			}
+		}
+
+		if($type eq "contacts"){
+			modifyXMLcontacts($lhandle->{$grp},$atomgroup,$groupC1,$groupC2,$chghash,$remove,$mapping);
+		}elsif($type eq "dihedrals"){
+			modifyXMLdihedrals($lhandle->{$grp},$atomgroup,$groupD,$chghash,$remove,$mapping);
+		}elsif($type eq "angles"){
+			modifyXMLangles($lhandle->{$grp},$atomgroup,$groupD,$chghash,$remove,$mapping);
+		}elsif($type eq "externals"){
+			modifyXMLexternals($lhandle->{$grp},$atomgroup,$groupD,$chghash,$remove,$mapping);
+		} 
 
 		print "Modify/remove additional $type parameters? (Y/N)\n";
 		$cont=getreply()		
@@ -616,7 +666,7 @@ sub rescaleXMLsettings{
 	my $groupD="";
 	my $groupC1="";
 	my $groupC2="";
-	if($type eq "dihedrals"){
+	if($type eq "dihedrals" or $type eq "angles" or $type eq "externals"){
 		print "Select the index of the atom group for which you want to change parameters.\n";
 		listgroups($Ngrps,$grpnms);
 		print "selection:";
@@ -762,6 +812,64 @@ sub modifyXMLcontacts{
 	}
 }
 
+sub modifyXMLangles{
+	my($XMLhandle,$atomgroup,$groupD,$chghash,$remove,$mapping)=@_;
+
+	if(defined $mapping){
+		my %mapping=%{$mapping};
+		foreach my $interaction(@{$XMLhandle->{"interaction"}}){
+			my $i=$interaction->{"i"};
+			my $j=$interaction->{"j"};
+			my $k=$interaction->{"k"};
+			if(defined $mapping{$i}){
+				$interaction->{"i"}=$mapping{$i};
+			}else{
+				smog_note("No mapping value given for index $i\n");
+			}
+			if(defined $mapping{$j}){
+				$interaction->{"j"}=$mapping{$j};
+			}else{
+				smog_note("No mapping value given for index $j\n");
+			}
+			if(defined $mapping{$k}){
+				$interaction->{"k"}=$mapping{$k};
+			}else{
+				smog_note("No mapping value given for index $k\n");
+			}
+		}
+	}else{
+		my %atomhash=%{$atomgroup->{$groupD}};
+		my $elcount=-1;
+
+		foreach my $interaction(@{$XMLhandle->{"interaction"}}){
+			$elcount++;
+			if(!defined $interaction){
+				next;
+			}
+			my $i=$interaction->{"i"};
+			if(defined $atomhash{$i}){
+				my $j=$interaction->{"j"};
+				if(defined $atomhash{$j}){
+					my $k=$interaction->{"k"};
+					if(defined $atomhash{$k}){
+						if(defined $remove){
+							if(! defined @{$XMLhandle->{"interaction"}}[$elcount]){
+								smog_quit("internal error: Attempt to delete deleted angle.  Please report to SMOG developers.");
+							}
+							delete(@{$XMLhandle->{"interaction"}}[$elcount]);
+						}else{
+							foreach my $param(keys %{$chghash}){
+								my $curval=$interaction->{$param};
+								$interaction->{$param}=eval("($curval)$chghash->{$param}");
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 sub modifyXMLdihedrals{
 	my($XMLhandle,$atomgroup,$groupD,$chghash,$remove,$mapping)=@_;
 
@@ -823,6 +931,46 @@ sub modifyXMLdihedrals{
 	}
 }
 
+sub modifyXMLexternals{
+	my($XMLhandle,$atomgroup,$groupD,$chghash,$remove,$mapping)=@_;
+
+	if(defined $mapping){
+		my %mapping=%{$mapping};
+		foreach my $interaction(@{$XMLhandle->{"interaction"}}){
+			my $i=$interaction->{"i"};
+			if(defined $mapping{$i}){
+				$interaction->{"i"}=$mapping{$i};
+			}else{
+				smog_note("No mapping value given for index $i\n");
+			}
+		}
+	}else{
+		my %atomhash=%{$atomgroup->{$groupD}};
+		my $elcount=-1;
+
+		foreach my $interaction(@{$XMLhandle->{"interaction"}}){
+			$elcount++;
+			if(!defined $interaction){
+				next;
+			}
+			my $i=$interaction->{"i"};
+			if(defined $atomhash{$i}){
+				if(defined $remove){
+					if(! defined @{$XMLhandle->{"interaction"}}[$elcount]){
+						smog_quit("internal error: Attempt to delete deleted angle.  Please report to SMOG developers.");
+					}
+					delete(@{$XMLhandle->{"interaction"}}[$elcount]);
+				}else{
+					foreach my $param(keys %{$chghash}){
+						my $curval=$interaction->{$param};
+						$interaction->{$param}=eval("($curval)$chghash->{$param}");
+					}
+				}
+			}
+		}
+	}
+}
+
 sub checkXMLfactor {
 	my ($val)=@_;
 	if($val !~ m/^[\+\-\*\/]/){
@@ -837,10 +985,8 @@ sub checkXMLfactor {
 	}
 }
 
-
-
 sub OpenSMOGextractXML{
-	my ($OSref,$OpenSMOGxml,$keepatoms,$typesinsystem,$header)=@_;
+	my ($OSref,$keepatoms,$typesinsystem)=@_;
         # OSref is a handle to the hash holding all information to be written.
         # $OpenSMOGxml is the output file name
 	# Only load the module if we are writing an OpenSMOG file
@@ -848,11 +994,57 @@ sub OpenSMOGextractXML{
         if(length($checkPackage) > 0) { smog_quit("Perl module XML::LibXML not installed. Since you are using OpenSMOG, we can not continue...")}
         # this was a workaround to a cryptic shared variable error in perl
 	use if 0==0 , "XML::LibXML";
+	OpenSMOGextractAngles($OSref,$keepatoms);
 	OpenSMOGextractContacts($OSref,$keepatoms);
 	OpenSMOGextractDihedrals($OSref,$keepatoms);
+	OpenSMOGextractExternals($OSref,$keepatoms);
 	OpenSMOGextractNonBonds($OSref,$keepatoms,$typesinsystem);
-	OpenSMOGwriteXML($OSref,$OpenSMOGxml,$header,);
 	return \%OpenSMOGatoms2restrain;
+}
+
+
+sub OpenSMOGextractAngles{
+	my ($OSref,$keepatoms)=@_;
+	my $type="angles";
+	if(defined $OSref->{$type}){
+		print "Angles found in OpenSMOG XML file.  Will extract.\n";
+		my $handle1=$OSref->{$type};
+		foreach my $subtype(sort keys %{$handle1}){
+		   	my $handle2=$handle1->{$subtype};
+		   	foreach my $name(sort keys %{$handle2}){
+		   		my $handle3=$handle2->{"$name"}->{interaction};
+		   	     	for (my $I=0;$I<=$#{$handle3};$I++){
+					if(OpenSMOGkeepAngle(${$handle3}[$I],$keepatoms)){
+						delete ${$handle3}[$I];
+						# if evals to 1, then delete
+					}
+					# this renumbers, or removes the interaction
+		   	     	}
+        	   	 }
+		}
+	}
+}
+
+sub OpenSMOGextractExternals{
+	my ($OSref,$keepatoms)=@_;
+	my $type="externals";
+	if(defined $OSref->{$type}){
+		print "Externals found in OpenSMOG XML file.  Will extract.\n";
+		my $handle1=$OSref->{$type};
+		foreach my $subtype(sort keys %{$handle1}){
+		   	my $handle2=$handle1->{$subtype};
+		   	foreach my $name(sort keys %{$handle2}){
+		   		my $handle3=$handle2->{"$name"}->{interaction};
+		   	     	for (my $I=0;$I<=$#{$handle3};$I++){
+					if(OpenSMOGkeepExternal(${$handle3}[$I],$keepatoms)){
+						delete ${$handle3}[$I];
+						# if evals to 1, then delete
+					}
+					# this renumbers, or removes the interaction
+		   	     	}
+        	   	 }
+		}
+	}
 }
 
 sub OpenSMOGextractContacts{
@@ -939,6 +1131,29 @@ sub OpenSMOGkeepContact {
 	return 1;
 }
 
+sub OpenSMOGkeepAngle {
+	my ($tmphash,$keepatoms)=@_;
+        if(exists $keepatoms->{$tmphash->{"i"}} && exists $keepatoms->{$tmphash->{"j"}} && exists $keepatoms->{$tmphash->{"k"}} ){
+		$tmphash->{"i"}=$keepatoms->{$tmphash->{"i"}};
+		$tmphash->{"j"}=$keepatoms->{$tmphash->{"j"}};
+		$tmphash->{"k"}=$keepatoms->{$tmphash->{"k"}};
+		return 0;
+	}else{
+		if(exists $keepatoms->{$tmphash->{"i"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"i"}}}=1;
+		}
+		if(exists $keepatoms->{$tmphash->{"j"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"j"}}}=1;
+		}
+
+		if(exists $keepatoms->{$tmphash->{"k"}}){
+			$OpenSMOGatoms2restrain{$keepatoms->{$tmphash->{"k"}}}=1;
+		}
+	}
+	return 1;
+}
+
+
 sub OpenSMOGkeepDihedral {
 	my ($tmphash,$keepatoms)=@_;
         if(exists $keepatoms->{$tmphash->{"i"}} && exists $keepatoms->{$tmphash->{"j"}} && exists $keepatoms->{$tmphash->{"k"}} && exists $keepatoms->{$tmphash->{"l"}}){
@@ -964,6 +1179,18 @@ sub OpenSMOGkeepDihedral {
 	}
 	return 1;
 }
+
+sub OpenSMOGkeepExternal {
+	my ($tmphash,$keepatoms)=@_;
+        if(exists $keepatoms->{$tmphash->{"i"}} ){
+		$tmphash->{"i"}=$keepatoms->{$tmphash->{"i"}};
+		return 0;
+	}else{
+		return 1;
+	}
+}
+
+
 
 sub newOpenSMOGfunction{
 	my ($OpenSMOGhandle,$fh,$fN)=@_;
@@ -998,6 +1225,10 @@ sub newOpenSMOGfunction{
 		$fh->{$fN}->{"IsCustom"}=1;
 	}elsif($fh->{$fN}->{"OpenSMOGtype"} eq "dihedral"){
 		$fh->{$fN}->{"directive"}="dihedrals";
+		# creating this element to keep track of the fact that it was a custom term.
+		$fh->{$fN}->{"IsCustom"}=1;
+	}elsif($fh->{$fN}->{"OpenSMOGtype"} eq "angle"){
+		$fh->{$fN}->{"directive"}="angles";
 		# creating this element to keep track of the fact that it was a custom term.
 		$fh->{$fN}->{"IsCustom"}=1;
 	}else{
