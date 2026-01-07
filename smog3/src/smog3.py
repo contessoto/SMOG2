@@ -8,6 +8,8 @@ from . import template as t
 from . import pdb as p
 from . import bonded as b
 from . import topology as top
+from . import opensmog
+import shutil
 
 def parse_args():
     parser = argparse.ArgumentParser(description=f"SMOG v{VERSION}")
@@ -37,6 +39,9 @@ def parse_args():
     parser.add_argument('-SCMorig', action='store_true', help='Directly save SCM contact map')
     parser.add_argument('-keep4SCM', action='store_true', help='Keep temporary files used for SCM')
 
+    parser.add_argument('-OpenSMOG', action='store_true', help='Enable OpenSMOG mode')
+    parser.add_argument('-OpenSMOGxml', dest='opensmog_xml', help='Output OpenSMOG XML file name')
+
     args = parser.parse_args()
 
     if args.v:
@@ -63,11 +68,17 @@ def main():
     args.shadow_file = check_suffix(args.shadow_file, ".contacts")
     args.ndx_file = check_suffix(args.ndx_file, ".ndx")
 
+    if args.OpenSMOG:
+        if not args.opensmog_xml: args.opensmog_xml = args.dname + ".xml"
+        args.opensmog_xml = check_suffix(args.opensmog_xml, ".xml")
+
     gro_file_scm = args.gro_file + "4SCM.gro"
     top_file_scm = args.top_file + "4SCM.top"
 
     if args.backup == "yes":
-        for f in [args.top_file, args.gro_file, args.shadow_file, args.ndx_file]:
+        backup_files = [args.top_file, args.gro_file, args.shadow_file, args.ndx_file]
+        if args.OpenSMOG: backup_files.append(args.opensmog_xml)
+        for f in backup_files:
             if f: check_already_exists(f)
 
     # Template selection
@@ -151,7 +162,7 @@ def main():
     if args.contact_file:
         print(f"Using provided contact file: {args.contact_file}")
         # Need to parse and convert to pairs
-        pass
+        pairs, exclusions = parse_contacts(args.contact_file, atom_info, args.OpenSMOG)
     else:
         print("Generating contact map...")
         # Write simplified TOP for SCM?
@@ -160,6 +171,8 @@ def main():
         # "printTop($topFile4SCM, 0)"
 
         # We need to write a temporary top file for SCM
+        # SCM temp top should contain OpenSMOG terms? SMOG2 code includes Dihedrals in SCM temp top.
+        # For now, pass all terms.
         top.write_topology(top_file_scm, atom_info, bonds, angles, dihedrals, [], [], t.INTERACTIONS, t.INTERACTIONS.get('molname', 'Macromolecule'), t.INTERACTIONS.get('nrexcl', 3))
 
         smog_path = os.environ.get("SMOG_PATH", ".")
@@ -193,15 +206,23 @@ def main():
         print(" ".join(cmd))
         subprocess.check_call(cmd)
 
+        if args.SCMorig:
+            shutil.copy(args.shadow_file, args.shadow_file + ".ShadowOutput")
+
         # Parse contacts
-        pairs, exclusions = parse_contacts(args.shadow_file, atom_info)
+        pairs, exclusions = parse_contacts(args.shadow_file, atom_info, args.OpenSMOG)
 
     # Write final topology
-    top.write_topology(args.top_file, atom_info, bonds, angles, dihedrals, pairs, exclusions, t.INTERACTIONS, t.INTERACTIONS.get('molname', 'Macromolecule'), t.INTERACTIONS.get('nrexcl', 3))
+    top.write_topology(args.top_file, atom_info, bonds, angles, dihedrals, pairs, exclusions, t.INTERACTIONS, t.INTERACTIONS.get('molname', 'Macromolecule'), t.INTERACTIONS.get('nrexcl', 3), opensmog_enabled=args.OpenSMOG)
 
-    print(f"\nYour Structure-based Model is ready!\nFiles generated:\n\t{args.top_file}\n\t{args.gro_file}\n\t{args.ndx_file}\n\t{args.shadow_file}")
+    if args.OpenSMOG:
+        opensmog.write_opensmog_xml(args.opensmog_xml)
 
-def parse_contacts(contact_file, atom_info):
+    print(f"\nYour Structure-based Model is ready!\nFiles generated:\n\t{args.top_file}")
+    if args.OpenSMOG: print(f"\t{args.opensmog_xml}")
+    print(f"\t{args.gro_file}\n\t{args.ndx_file}\n\t{args.shadow_file}")
+
+def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
     pairs = []
     exclusions = []
 
@@ -228,28 +249,26 @@ def parse_contacts(contact_file, atom_info):
             if len(parts) < 3: continue
 
             try:
-                i, j = int(parts[0]), int(parts[1])
-                # SCM.jar output: i j dist (if --smog2output used and format is simple)
-                # But previously we saw "1 15 1 202"
-                # If length is 4, maybe "i j chaini chainj" and no dist?
-                # Or "i j chaini dist"?
-                # SMOG 2 uses --smog2output.
-                # In SCM code (ShadowMain.java):
-                # if(ShadowSettings.SMOG2_OUTPUT_ON) ... System.out.println("\t"+s)
-                # And s depends on ContactMap.java logic.
-                # It writes "atom[i].getChain() ... atom[i].getPosition() ... dist?"
-                # Actually earlier grep showed: output.write( ... getChain ... getResNum ... )
-                # It seems complicated.
-                # BUT `parseCONTACT` in smogv2 simply takes the LAST token as distance.
-                # `my $dist=$tokens[$#tokens];`
-                # So we will do the same.
-                dist = float(parts[-1])
+                # SCM output with --smog2output is: chain1 serial1 chain2 serial2 [dist]
+                # Dist is optional in SCM output? Perl code calculates it if missing.
+                # parts indices: 0=c1, 1=s1, 2=c2, 3=s2, 4=dist?
 
-                # Note: if dist is > 100 or suspiciously large, check units.
-                # SCM uses Angstroms?
-                # SMOG 2 converts: `if($angToNano){ $dist *= 0.1; }`
-                # $angToNano is 0.1.
-                # So we assume Angstrom input and convert to nm.
+                i = int(parts[1])
+                j = int(parts[3])
+
+                if len(parts) >= 5:
+                    dist_ang = float(parts[4])
+                    dist_nm = dist_ang * 0.1
+                else:
+                    # Calculate distance from structure
+                    if i in idx_to_info and j in idx_to_info:
+                        a1 = idx_to_info[i]
+                        a2 = idx_to_info[j]
+                        # atom_info coords are in nm (converted in pdb.py)
+                        d2 = (a1['x']-a2['x'])**2 + (a1['y']-a2['y'])**2 + (a1['z']-a2['z'])**2
+                        dist_nm = d2**0.5
+                    else:
+                        continue
 
                 if i not in idx_to_info or j not in idx_to_info: continue
 
@@ -265,8 +284,6 @@ def parse_contacts(contact_file, atom_info):
                 func, cg = get_contact_function(type_i, type_j)
 
                 if not func: continue
-
-                dist_nm = dist * 0.1
 
                 f_type_map = {
                     'contact_1': 1,
@@ -297,6 +314,27 @@ def parse_contacts(contact_file, atom_info):
                     b_coef *= epsilon * (r0 ** m_exp)
 
                     parsed_params = [b_coef, a_coef]
+
+                    if opensmog_enabled:
+                        # OpenSMOG: contact_1-M-N
+                        # Params: A, B (swapped? Perl code swaps them for OpenSMOG)
+                        # Perl: ($paramArr->[2],$paramArr->[3])=($paramArr->[3],$paramArr->[2]);
+                        # In Perl, 2 is B, 3 is A (calculated as A and B above).
+                        # So for OpenSMOG, output B then A?
+                        # Wait, Perl says: "switch order for OpenSMOG, so that the first parameter is the 12 term"
+                        # Standard is A/r^12 - B/r^6 ?
+                        # If contact_1-6-12: A/r^12 - B/r^6.
+                        # Our parsed_params is [b_coef, a_coef].
+                        # b_coef is for r^M (6), a_coef is for r^N (12).
+                        # So params are [B, A].
+                        # If OpenSMOG expects A, B, we assume order matches expression "A/r^N - B/r^M".
+                        # If Perl swaps, maybe standard GMX output is B, A?
+                        # GMX type 1: C6, C12. C6 is attractive (B), C12 is repulsive (A).
+                        # So [B, A] is correct for GMX.
+                        # For OpenSMOG: expression="A/r^N-B/r^M". Params="A", "B".
+                        # So we need A, B.
+                        # parsed_params is [B, A]. So for OpenSMOG we should swap to [A, B].
+                        pass
 
                 elif f_name == 'contact_gaussian':
                     # contact_gaussian(eps, width, r0, ...)
@@ -330,8 +368,55 @@ def parse_contacts(contact_file, atom_info):
                 else:
                     parsed_params = [dist_nm, epsilon]
 
-                pair_line = f"{i}\t{j}\t{f_type}\t" + "\t".join([f"{p:12.9e}" for p in parsed_params]) + "\n"
-                pairs.append(pair_line)
+                if opensmog_enabled:
+                    # Add to OpenSMOG
+                    # Determine function name for OS (e.g. contact_1-M-N)
+                    os_func_name = f_name
+                    if f_name == 'contact_1':
+                        os_func_name = f"contact_1-{int(m_exp)}-{int(n_exp)}"
+                        # Params: A, B. parsed_params is [B, A]. Swap for OpenSMOG
+                        os_params = [parsed_params[1], parsed_params[0]]
+
+                        # Add to OpenSMOG data
+                        opensmog.add_interaction('contacts', os_func_name,
+                            opensmog.OS_POTENTIALS['contact_1']['expression'].replace('N', str(int(n_exp))).replace('M', str(int(m_exp))),
+                            opensmog.OS_POTENTIALS['contact_1']['parameters'],
+                            {'i': i, 'j': j, 'A': os_params[0], 'B': os_params[1]},
+                            exclusions=1
+                        )
+                    elif f_name == 'contact_gaussian':
+                        # Params: A, r0, sigmaG, a
+                        # parsed_params from loop above might be raw.
+                        # Need specific mapping.
+                        # Assuming template: contact_gaussian(eps_c, eps_nc, sigma, ?)
+                        # parsed_params: [eps_c, eps_nc, sigma, r0]
+                        # OpenSMOG expects: A, r0, sigmaG, a
+                        # Mapping from Perl: A=p[0], r0=p[3], sigmaG=p[2], a=p[1]
+                        if len(parsed_params) >= 4:
+                            os_params = {
+                                'A': parsed_params[0] * epsilon if isinstance(parsed_params[0], float) else parsed_params[0], # Scale eps?
+                                'r0': parsed_params[3],
+                                'sigmaG': parsed_params[2],
+                                'a': parsed_params[1]
+                            }
+                            # Note: eps logic in Perl: p[0] *= epsilon.
+                            opensmog.add_interaction('contacts', 'contact_gaussian',
+                                opensmog.OS_POTENTIALS['contact_gaussian']['expression'],
+                                opensmog.OS_POTENTIALS['contact_gaussian']['parameters'],
+                                {'i': i, 'j': j, **os_params},
+                                exclusions=1
+                            )
+                    # Add support for other functions if needed
+
+                    # We do NOT add to pairs list for TOP file if OpenSMOG enabled for this term
+                    # But if we return empty pairs, write_topology handles it?
+                    # Yes, write_topology has logic to skip if needed, but here we control list.
+                    # We should probably NOT append to pairs if it's going to OS.
+                    pass
+                else:
+                    pair_line = f"{i}\t{j}\t{f_type}\t" + "\t".join([f"{p:12.9e}" for p in parsed_params]) + "\n"
+                    pairs.append(pair_line)
+
                 exclusions.append(f"{i}\t{j}\n")
 
             except Exception as e:

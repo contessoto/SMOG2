@@ -6,3 +6,5 @@ build/
 smog3.egg-info/
 __pycache__/
 *.pyc
+share/
+SMOG-CHECK/
