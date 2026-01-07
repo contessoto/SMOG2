@@ -1,0 +1,17 @@
+Here were the settings used for this test
+1A01-AMP.pdb
+1A01-AMP.top
+1A01-AMP.gro
+1A01-AMP.ndx
+All-Atom
+R_CD 	   2
+R_P_BB_SC  2
+R_N_SC_BB  1
+PRO_DIH    1
+NA_DIH     1
+LIGAND_DIH 1
+sigma 	   2.5
+epsilon    0.1
+epsilonCAC 1
+epsilonCAD 1
+sigmaCA    4

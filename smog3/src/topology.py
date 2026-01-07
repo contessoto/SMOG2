@@ -1,10 +1,11 @@
 from .template import INTERACTIONS, RESIDUES, ATOM_NAME_HASH
 from .config import VERSION
+from . import opensmog
 import datetime
 import socket
 import os
 
-def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusions, defaults, mol_name="Macromolecule", nrexcl=3):
+def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusions, defaults, mol_name="Macromolecule", nrexcl=3, opensmog_enabled=False):
     with open(top_file, 'w') as f:
         # Header
         date = datetime.datetime.now().strftime("%a %b %d %H:%M:%S %Y")
@@ -83,8 +84,7 @@ def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusi
         f.write("[ bonds ]\n")
         f.write(";ai\taj\tfunc\t r0(nm)\t         Kb\n")
         for bond in bonds:
-            # bond is dict {'i': ..., 'j': ..., 'v': ...} where v is formatted string
-            # But wait, bonded.py calculate_bonds returns list of dicts with 'v' as string line
+            if opensmog_enabled and bond.get('opensmog'): continue
             f.write(bond['v'])
         f.write("\n")
 
@@ -92,6 +92,7 @@ def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusi
         f.write("[ angles ]\n")
         f.write(";ai\taj\tak\tfunc\t th0(deg)        Ka\n")
         for angle in angles:
+            if opensmog_enabled and angle.get('opensmog'): continue
             f.write(angle['v'])
         f.write("\n")
 
@@ -99,6 +100,7 @@ def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusi
         f.write("[ dihedrals ]\n")
         f.write(";ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult\n")
         for dihed in dihedrals:
+            if opensmog_enabled and dihed.get('opensmog'): continue
             f.write(dihed['v'])
         f.write("\n")
 
@@ -107,7 +109,13 @@ def write_topology(top_file, atom_info, bonds, angles, dihedrals, pairs, exclusi
             f.write("[ pairs ]\n")
             f.write(";ai\taj\ttype\t A               B\n")
             for pair in pairs:
-                f.write(pair) # Assuming pre-formatted string
+                # Pair might be string or dict? In smog3.py it's string list
+                if isinstance(pair, str):
+                    # Check if OpenSMOG logic needed?
+                    # smog3.py parse_contacts returns formatted strings.
+                    # We might need to change parse_contacts to support OpenSMOG separation
+                    pass
+                f.write(pair)
             f.write("\n")
 
         # Exclusions

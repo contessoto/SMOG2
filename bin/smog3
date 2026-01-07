@@ -1,0 +1,3 @@
+#!/bin/bash
+export PYTHONPATH=/app
+python3 -m smog3.src.smog3 "$@"
