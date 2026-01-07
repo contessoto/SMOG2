@@ -1,51 +1,22 @@
 from setuptools import setup, find_packages
+import os
+
+# Helper to list files for data_files
+def find_data_files(directory):
+    paths = []
+    for (path, directories, filenames) in os.walk(directory):
+        if filenames:
+            paths.append((path.replace('share/templates', 'share/smog3/templates'),
+                          [os.path.join(path, f) for f in filenames]))
+    return paths
+
+data_files = find_data_files('share/templates')
 
 setup(
     name='smog3',
-    version='2.7beta',
-    packages=find_packages(where='.'),
-    package_dir={'': '.'},
+    version='2.7.0',  # Using semantic versioning for PyPI
+    packages=find_packages(),
     include_package_data=True,
-    package_data={
-        # This only works if files are inside the package. share is outside.
-    },
-    data_files=[
-        ('share/smog3/templates', [
-            'share/templates/ff.info'
-        ]),
-        ('share/smog3/templates/SBM_AA', [
-            'share/templates/SBM_AA/AA-whitford09.b',
-            'share/templates/SBM_AA/AA-whitford09.sif',
-            'share/templates/SBM_AA/default.map',
-            'share/templates/SBM_AA/.citation',
-            'share/templates/SBM_AA/AA-whitford09.bif',
-            'share/templates/SBM_AA/AA-whitford09.nb'
-        ]),
-        ('share/smog3/templates/SBM_AA+gaussian', [
-            'share/templates/SBM_AA+gaussian/AA+gaussian-noel12.b',
-            'share/templates/SBM_AA+gaussian/AA+gaussian-noel12.sif',
-            'share/templates/SBM_AA+gaussian/AA+gaussian-noel12.nb',
-            'share/templates/SBM_AA+gaussian/default.map',
-            'share/templates/SBM_AA+gaussian/AA+gaussian-noel12.bif',
-            'share/templates/SBM_AA+gaussian/.citation'
-        ]),
-        ('share/smog3/templates/SBM_calpha', [
-            'share/templates/SBM_calpha/CA-clementi00.nb',
-            'share/templates/SBM_calpha/default.map',
-            'share/templates/SBM_calpha/CA-clementi00.sif',
-            'share/templates/SBM_calpha/.citation',
-            'share/templates/SBM_calpha/CA-clementi00.b',
-            'share/templates/SBM_calpha/CA-clementi00.bif'
-        ]),
-        ('share/smog3/templates/SBM_calpha+gaussian', [
-            'share/templates/SBM_calpha+gaussian/CA+gaussian-lammert09.nb',
-            'share/templates/SBM_calpha+gaussian/default.map',
-            'share/templates/SBM_calpha+gaussian/.citation',
-            'share/templates/SBM_calpha+gaussian/CA+gaussian-lammert09.b',
-            'share/templates/SBM_calpha+gaussian/CA+gaussian-lammert09.sif',
-            'share/templates/SBM_calpha+gaussian/CA+gaussian-lammert09.bif'
-        ]),
-    ],
     install_requires=[
         'numpy',
     ],
@@ -54,7 +25,18 @@ setup(
             'smog3=smog3.src.smog3:main',
         ],
     },
+    data_files=data_files,
     author='SMOG Team',
+    author_email='info@smog-server.org',
     description='Structure-based Model (SMOG) software in Python',
+    long_description=open('README.md').read() if os.path.exists('README.md') else '',
+    long_description_content_type='text/markdown',
     url='http://smog-server.org',
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: MIT License', # Assuming MIT or similar, check COPYING
+        'Operating System :: OS Independent',
+        'Topic :: Scientific/Engineering :: Bio-Informatics',
+    ],
+    python_requires='>=3.6',
 )
