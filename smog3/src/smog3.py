@@ -22,12 +22,13 @@ def parse_args():
     parser.add_argument('-c', dest='contact_file', help='Input contact map file')
 
     parser.add_argument('-t', dest='input_folder', help='Folder containing templates of molecular and interaction definitions')
-    parser.add_argument('-tCG', dest='coarse_folder', help='Folder containing templates used for coarse graining')
+    parser.add_argument('-tCG', '-tcg', dest='coarse_folder', help='Folder containing templates used for coarse graining')
 
-    parser.add_argument('-AA', action='store_true', help='Use default All-atom model')
-    parser.add_argument('-AAgaussian', action='store_true', help='Use default All-atom model with Gaussian contacts')
-    parser.add_argument('-CA', action='store_true', help='Use default Calpha protein model')
-    parser.add_argument('-CAgaussian', action='store_true', help='Use default Calpha protein model with Gaussian contacts')
+    # Case insensitive flags (by adding aliases)
+    parser.add_argument('-AA', '-aa', action='store_true', dest='AA', help='Use default All-atom model')
+    parser.add_argument('-AAgaussian', '-aagaussian', action='store_true', dest='AAgaussian', help='Use default All-atom model with Gaussian contacts')
+    parser.add_argument('-CA', '-ca', action='store_true', dest='CA', help='Use default Calpha protein model')
+    parser.add_argument('-CAgaussian', '-cagaussian', action='store_true', dest='CAgaussian', help='Use default Calpha protein model with Gaussian contacts')
 
     parser.add_argument('-dname', dest='dname', default='smog', help='Default name to use for all output files')
     parser.add_argument('-backup', dest='backup', default='yes', help='Back up any pre-existing output files')
@@ -36,11 +37,11 @@ def parse_args():
     parser.add_argument('-info', action='store_true', help='Show information about time and energy units')
     parser.add_argument('-v', action='store_true', help='Print version')
     parser.add_argument('-freecoor', action='store_true', help='Allow free-format PDB')
-    parser.add_argument('-SCMorig', action='store_true', help='Directly save SCM contact map')
-    parser.add_argument('-keep4SCM', action='store_true', help='Keep temporary files used for SCM')
+    parser.add_argument('-SCMorig', '-scmorig', action='store_true', dest='SCMorig', help='Directly save SCM contact map')
+    parser.add_argument('-keep4SCM', '-keep4scm', action='store_true', dest='keep4SCM', help='Keep temporary files used for SCM')
 
-    parser.add_argument('-OpenSMOG', action='store_true', help='Enable OpenSMOG mode')
-    parser.add_argument('-OpenSMOGxml', dest='opensmog_xml', help='Output OpenSMOG XML file name')
+    parser.add_argument('-OpenSMOG', '-opensmog', action='store_true', dest='OpenSMOG', help='Enable OpenSMOG mode')
+    parser.add_argument('-OpenSMOGxml', '-opensmogxml', dest='opensmog_xml', help='Output OpenSMOG XML file name')
 
     args = parser.parse_args()
 
@@ -232,16 +233,6 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
     # atom_info is list of dicts indexable by atom_num
     idx_to_info = {a['atom_num']: a for a in atom_info}
 
-    # SCM output format with --smog2output is "i j chaini chainj dist" or just "i j ..."?
-    # The file we inspected earlier had "1 15 1 202" ?
-    # Actually "1 15 1 202" looks like chain i, chain j, type, distance? No.
-    # SMOG 2 SCM wrapper says: "print $contactFile "$i $j $chaini $chainj $dist\n";"
-    # But wait, we saw "1 15 1 202" -> i=1, j=15?
-    # The first line "1 15 1 202" likely: 1 15 1 202? No float?
-    # Maybe "i j chaini chainj distance" ?
-    # Let's assume standard SCM format if --smog2output is used.
-    # In smogv2.pl: "parseCONTACT" reads it.
-
     with open(contact_file, 'r') as f:
         for line in f:
             if line.startswith('#') or not line.strip(): continue
@@ -250,8 +241,7 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
 
             try:
                 # SCM output with --smog2output is: chain1 serial1 chain2 serial2 [dist]
-                # Dist is optional in SCM output? Perl code calculates it if missing.
-                # parts indices: 0=c1, 1=s1, 2=c2, 3=s2, 4=dist?
+                # indices are 1-based in output but we need to check consistency with atom_info keys
 
                 i = int(parts[1])
                 j = int(parts[3])
@@ -283,7 +273,8 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
 
                 func, cg = get_contact_function(type_i, type_j)
 
-                if not func: continue
+                if not func:
+                    continue
 
                 f_type_map = {
                     'contact_1': 1,
@@ -296,10 +287,15 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
                 f_type = f_type_map.get(f_name, 1)
 
                 cg_info = t.TERM_RATIOS.get('contactGroup', {}).get(cg, {})
-                relative_strength = cg_info.get('intraRelativeStrength', 1.0)
+                relative_strength = cg_info.get('intraRelativeStrength')
+                if relative_strength is None: relative_strength = 1.0
                 epsilon = float(relative_strength)
 
                 parsed_params = []
+
+                # Define variables to ensure they exist for OpenSMOG logic
+                m_exp = 0.0
+                n_exp = 0.0
 
                 if f_name == 'contact_1':
                     m_exp = float(f_params[0])
@@ -315,45 +311,8 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
 
                     parsed_params = [b_coef, a_coef]
 
-                    if opensmog_enabled:
-                        # OpenSMOG: contact_1-M-N
-                        # Params: A, B (swapped? Perl code swaps them for OpenSMOG)
-                        # Perl: ($paramArr->[2],$paramArr->[3])=($paramArr->[3],$paramArr->[2]);
-                        # In Perl, 2 is B, 3 is A (calculated as A and B above).
-                        # So for OpenSMOG, output B then A?
-                        # Wait, Perl says: "switch order for OpenSMOG, so that the first parameter is the 12 term"
-                        # Standard is A/r^12 - B/r^6 ?
-                        # If contact_1-6-12: A/r^12 - B/r^6.
-                        # Our parsed_params is [b_coef, a_coef].
-                        # b_coef is for r^M (6), a_coef is for r^N (12).
-                        # So params are [B, A].
-                        # If OpenSMOG expects A, B, we assume order matches expression "A/r^N - B/r^M".
-                        # If Perl swaps, maybe standard GMX output is B, A?
-                        # GMX type 1: C6, C12. C6 is attractive (B), C12 is repulsive (A).
-                        # So [B, A] is correct for GMX.
-                        # For OpenSMOG: expression="A/r^N-B/r^M". Params="A", "B".
-                        # So we need A, B.
-                        # parsed_params is [B, A]. So for OpenSMOG we should swap to [A, B].
-                        pass
-
                 elif f_name == 'contact_gaussian':
                     # contact_gaussian(eps, width, r0, ...)
-                    # Check definition in SMOGglobals.pm: A, r0, sigmaG, a
-                    # params: A (eps), a (?), r0?, sigmaG?
-                    # "A*((1+a/(A*r^12))*(1-exp(-(r-r0)^2/(2*sigmaG^2)))-1)"
-                    # Perl: ($A,$r0,$sigma_G,$a) = ($paramArr->[0],$paramArr->[3],$paramArr->[2],$paramArr->[1]);
-                    # paramArr in Perl before shift: eps_c, eps_nc, sigma, r0.
-                    # python f_params: same order as string.
-                    # contact_gaussian(eps_c, eps_nc, sigma) usually r0 is implicit?
-                    # If template has ?, it is replaced by r0.
-                    # We need to map `f_params` to output.
-
-                    # Assume simple Gaussian for now if template used it.
-                    # Standard: A, r0, sigmaG
-
-                    # Reusing contactParseGaussian logic from perl port would be best but complex here.
-                    # Fallback to passing raw params with ? substitution.
-                    pass
                     parsed_params = []
                     for p in f_params:
                          if '?' in p:
@@ -408,10 +367,7 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
                             )
                     # Add support for other functions if needed
 
-                    # We do NOT add to pairs list for TOP file if OpenSMOG enabled for this term
-                    # But if we return empty pairs, write_topology handles it?
-                    # Yes, write_topology has logic to skip if needed, but here we control list.
-                    # We should probably NOT append to pairs if it's going to OS.
+                    # Do NOT add to pairs list for TOP file if OpenSMOG enabled for this term
                     pass
                 else:
                     pair_line = f"{i}\t{j}\t{f_type}\t" + "\t".join([f"{p:12.9e}" for p in parsed_params]) + "\n"
@@ -420,7 +376,6 @@ def parse_contacts(contact_file, atom_info, opensmog_enabled=False):
                 exclusions.append(f"{i}\t{j}\n")
 
             except Exception as e:
-                # print(f"Error parsing contact line {line}: {e}")
                 pass
 
     return pairs, exclusions

@@ -1,1 +1,1 @@
-recursive-include smog3/share/templates *
+recursive-include share/templates *
