@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smog3"
+version = "0.1.0"
+description = "Compatibility-first Python successor scaffold for SMOG2"
+readme = "README"
+requires-python = ">=3.9"
+authors = [{name = "SMOG development team"}]
+license = {text = "GPL-2.0-or-later"}
+
+[project.scripts]
+smog2 = "smog3.cli:smog2_main"
+smog_adjustPDB = "smog3.cli:smog_adjustpdb_main"
+smog_editgro = "smog3.cli:smog_editgro_main"
+smog_extract = "smog3.cli:smog_extract_main"
+smog_ions = "smog3.cli:smog_ions_main"
+smog_modifyXML = "smog3.cli:smog_modifyxml_main"
+smog_scale-energies = "smog3.cli:smog_scale_energies_main"
+smog_tablegen = "smog3.cli:smog_tablegen_main"
+smog3-install-compat = "smog3.install_compat:main"
+smog3-smogcheck-subset = "smog3.smogcheck_parity:main"
+smog3-verify = "smog3.verify:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
