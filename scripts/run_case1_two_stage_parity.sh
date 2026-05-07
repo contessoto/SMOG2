@@ -8,11 +8,29 @@ fi
 
 BASE_DIR="parity_runs/case1/baseline"
 CAND_DIR="parity_runs/case1/candidate"
+REPORT_JSON="parity_case1.json"
 
+log() {
+  echo "[case1-parity] $*"
+}
+
+log "cleaning old parity outputs"
 rm -rf "$BASE_DIR" "$CAND_DIR"
+rm -f "$REPORT_JSON"
+
+if [[ -e "$BASE_DIR" || -e "$CAND_DIR" || -e "$REPORT_JSON" ]]; then
+  echo "ERROR: stale parity outputs remain after cleanup" >&2
+  exit 10
+fi
+
 mkdir -p "$BASE_DIR" "$CAND_DIR"
 
-echo "[1/3] Running baseline SMOG2 in official container"
+if find "$BASE_DIR" "$CAND_DIR" -mindepth 1 -print -quit | grep -q .; then
+  echo "ERROR: parity output directories are not empty after recreation" >&2
+  exit 11
+fi
+
+log "running SMOG2 baseline"
 docker run --rm -v "$PWD":/workdir smogserver/smog2:stable bash -lc '
 set -euo pipefail
 cd /workdir
@@ -20,7 +38,7 @@ mkdir -p parity_runs/case1/baseline
 smog2 -i /workdir/SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o /workdir/parity_runs/case1/baseline/model.top -g /workdir/parity_runs/case1/baseline/model.gro -n /workdir/parity_runs/case1/baseline/model.ndx -s /workdir/parity_runs/case1/baseline/model.contacts
 '
 
-echo "[2/3] Running candidate SMOG3 with local Python"
+log "running SMOG3 candidate"
 if ! command -v python3 >/dev/null 2>&1; then
   echo "Missing local python3 for candidate stage. Install python3 and retry." >&2
   exit 2
@@ -51,11 +69,11 @@ if [[ "$MISSING" -ne 0 ]]; then
   exit 3
 fi
 
-echo "[3/3] Comparing baseline vs candidate"
+log "comparing outputs"
 PYTHONPATH=src python3 -m smog3.parity_direct \
   --compare-existing \
   --baseline-dir "$BASE_DIR" \
   --candidate-dir "$CAND_DIR" \
-  --report-json parity_case1.json
+  --report-json "$REPORT_JSON"
 
-echo "Parity report written to parity_case1.json"
+log "parity report written to $REPORT_JSON"
