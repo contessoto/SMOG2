@@ -1,0 +1,58 @@
+name: smog3-parity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "work", "main", "master" ]
+  pull_request:
+
+jobs:
+  parity-two-stage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Pull official SMOG2 image
+        run: |
+          docker pull smogserver/smog2:stable
+
+      - name: Run baseline case1 in official SMOG2 container
+        run: |
+          mkdir -p parity_runs/case1/baseline
+          docker run --rm -v "$PWD":/workdir smogserver/smog2:stable bash -lc '
+            set -euo pipefail
+            smog2 -i /workdir/SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o /workdir/parity_runs/case1/baseline/model.top -g /workdir/parity_runs/case1/baseline/model.gro -n /workdir/parity_runs/case1/baseline/model.ndx -s /workdir/parity_runs/case1/baseline/model.contacts
+          '
+
+      - name: Run candidate case1 with local Python
+        run: |
+          mkdir -p parity_runs/case1/candidate
+          PYTHONPATH=src python -m smog3.smog2_native -i SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o parity_runs/case1/candidate/model.top -g parity_runs/case1/candidate/model.gro -n parity_runs/case1/candidate/model.ndx -s parity_runs/case1/candidate/model.contacts
+
+      - name: Run test suite
+        run: |
+          PYTHONPATH=src pytest -q tests
+
+      - name: Compare baseline vs candidate
+        run: |
+          PYTHONPATH=src python -m smog3.parity_direct --compare-existing --baseline-dir parity_runs/case1/baseline --candidate-dir parity_runs/case1/candidate --report-json parity_case1.json
+
+      - name: Upload parity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-case1-report
+          path: parity_case1.json
+          if-no-files-found: warn
