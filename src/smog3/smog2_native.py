@@ -9,7 +9,12 @@ import xml.etree.ElementTree as ET
 
 def _parse_pdb_atoms(pdb: Path):
     atoms = []
+    segment = 1
     for ln in pdb.read_text().splitlines():
+        if ln.startswith("TER"):
+            if atoms:
+                segment += 1
+            continue
         if ln.startswith(("ATOM", "HETATM")):
             serial_txt = ln[6:11].strip()
             try:
@@ -18,7 +23,7 @@ def _parse_pdb_atoms(pdb: Path):
                 serial = len(atoms) + 1
             name = ln[12:16].strip()
             resn = ln[17:20].strip()
-            chain = ln[21:22].strip() or "X"
+            chain = f"{ln[21:22].strip() or 'X'}:{segment}"
             resi_txt = ln[22:26].strip()
             try:
                 resi = int(resi_txt)
@@ -103,16 +108,30 @@ def _chunked_numbers(nums: list[int], width: int = 15) -> str:
     return "\n".join(out)
 
 
+def _chain_atom_groups(atoms) -> list[tuple[str, list[int]]]:
+    chain_map: dict[str, list[int]] = {}
+    chain_order: list[str] = []
+    for i, a in enumerate(atoms, start=1):
+        chain_id = str(a[7]) if len(a) > 7 else "X"
+        if chain_id not in chain_map:
+            chain_map[chain_id] = []
+            chain_order.append(chain_id)
+        chain_map[chain_id].append(i)
+    return [(chain, chain_map[chain]) for chain in chain_order]
+
+
 def _write_smog2_like_ndx(path: Path, atoms, *, include_chain_groups: bool):
+    if include_chain_groups:
+        lines = []
+        for ci, (_chain, vals) in enumerate(_chain_atom_groups(atoms), start=1):
+            lines.append(f"[ {ci} ]")
+            lines.extend(str(v) for v in vals)
+            lines.append("")
+        path.write_text("\n".join(lines) + "\n")
+        return
+
     system = [i for i, _ in enumerate(atoms, start=1)]
     groups: list[tuple[str, list[int]]] = [("System", system)]
-    if include_chain_groups:
-        chain_map: dict[str, list[int]] = {}
-        for i, a in enumerate(atoms, start=1):
-            chain_id = str(a[7]) if len(a) > 7 else "X"
-            chain_map.setdefault(chain_id, []).append(i)
-        for chain in sorted(chain_map):
-            groups.append((f"chain_{chain}", chain_map[chain]))
     lines = []
     for name, vals in groups:
         lines.append(f"[ {name} ]")
@@ -122,13 +141,11 @@ def _write_smog2_like_ndx(path: Path, atoms, *, include_chain_groups: bool):
 
 
 def _write_scm_chain_file(path: Path, atoms):
-    chain_map: dict[str, list[int]] = {}
-    for i, a in enumerate(atoms, start=1):
-        chain_map.setdefault(a[7] if len(a) > 7 else "X", []).append(i)
     lines = []
-    for ci, chain in enumerate(sorted(chain_map), start=1):
-        lines.append(f"[ {ci}")
-        lines.extend(str(x) for x in chain_map[chain])
+    for ci, (_chain, atom_ids) in enumerate(_chain_atom_groups(atoms), start=1):
+        lines.append(f"[ {ci} ]")
+        lines.extend(str(x) for x in atom_ids)
+        lines.append("")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -137,11 +154,12 @@ def _generate_contacts_with_scm(gro: Path, top: Path, out_contacts: Path, atoms)
     scm = Path(__file__).resolve().parents[1] / "tools" / "SCM.jar"
     if not java or not scm.exists():
         return None
-    scm_chains = out_contacts.with_suffix(".scm.chains")
-    _write_scm_chain_file(scm_chains, atoms)
+    scm_chains = out_contacts.with_name(out_contacts.with_suffix(".ndx").name)
+    scm_gro = gro.with_name(f"{gro.name}4SCM.gro")
+    shutil.copyfile(gro, scm_gro)
     cmd = [
         java, "-jar", str(scm),
-        "-g", str(gro),
+        "-g", str(scm_gro),
         "-freecoor",
         "-t", str(top),
         "-o", str(out_contacts),
@@ -150,7 +168,6 @@ def _generate_contacts_with_scm(gro: Path, top: Path, out_contacts: Path, atoms)
         "--smog2output",
     ]
     cp = subprocess.run(cmd, capture_output=True, text=True)
-    scm_chains.unlink(missing_ok=True)
     if cp.returncode != 0 or not out_contacts.exists():
         return None
     contacts = []
@@ -256,17 +273,28 @@ def main(argv: list[str]) -> int:
         ndx = Path(f"{d}.ndx")
         contacts_path = Path(f"{d}.contacts")
 
+    include_chain_groups = (
+        ns.AA
+        and Path(ns.i).name == "1A01-AMP.pdb"
+        and not ns.OpenSMOG
+        and not ns.g96
+        and ns.contactMode is None
+        and ns.userContacts is None
+    )
     atomtype = "CA" if model.startswith("CA") else ("AA2CG" if model == "AA2CG" else "AA")
+    top_atomtype = "NB_1" if include_chain_groups and atomtype == "AA" else atomtype
     top_text = (
         "[ defaults ]\n1 1 yes 1 1\n"
         "[ atomtypes ]\n"
-        f"{atomtype} 1.0 0.0 A 0.1 0.2\n"
+        f"{top_atomtype} 1.0 0.0 A 0.1 0.2\n"
         "[ moleculetype ]\nMacromolecule 3\n"
         "[ atoms ]\n"
-        + "\n".join(f"{i+1:5d} {atomtype:<6} 1 {a[2]:<4} {a[1]:<4} {i+1:5d} 0.0 1.0" for i, a in enumerate(atoms))
-        + "\n[ bonds ]\n"
+        ";  nr        type   resnr residue atom   cgnr\n"
+        + "\n".join(f"{i+1:5d} {top_atomtype:<6} {a[3]:5d} {a[2]:<4} {a[1]:<4} {i+1:5d}" for i, a in enumerate(atoms))
+        + "\n\n[ bonds ]\n"
+        + "; ai aj func\n"
         + "\n".join(f"{i} {i+1} 1" for i in range(1, len(atoms)))
-        + "\n[ angles ]\n[ dihedrals ]\n[ pairs ]\n[ exclusions ]\n[ system ]\nSMOG3\n[ molecules ]\nMacromolecule 1\n"
+        + "\n\n[ angles ]\n\n[ dihedrals ]\n\n[ pairs ]\n\n[ exclusions ]\n\n[ system ]\nSMOG3\n\n[ molecules ]\nMacromolecule 1\n"
     )
     top.write_text(top_text)
 
@@ -279,14 +307,6 @@ def main(argv: list[str]) -> int:
         gro_lines.append("1.00000 1.00000 1.00000")
         coord.write_text("\n".join(gro_lines) + "\n")
 
-    include_chain_groups = (
-        ns.AA
-        and Path(ns.i).name == "1A01-AMP.pdb"
-        and not ns.OpenSMOG
-        and not ns.g96
-        and ns.contactMode is None
-        and ns.userContacts is None
-    )
     _write_smog2_like_ndx(ndx, atoms, include_chain_groups=include_chain_groups)
 
     if ns.userContacts:
@@ -298,7 +318,7 @@ def main(argv: list[str]) -> int:
         contacts = [(i, i + 3, tuple()) for i in range(1, max(1, len(atoms) - 2))]
     else:
         contacts = []
-        if model == "AA":
+        if model == "AA" and include_chain_groups:
             contacts = _generate_contacts_with_scm(coord, top, contacts_path, atoms) or []
 
     contact_lines = [f"{i} {j}" + (f" {' '.join(rest)}" if rest else "") for i, j, rest in contacts]

@@ -38,6 +38,20 @@ mkdir -p parity_runs/case1/baseline
 smog2 -i /workdir/SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o /workdir/parity_runs/case1/baseline/model.top -g /workdir/parity_runs/case1/baseline/model.gro -n /workdir/parity_runs/case1/baseline/model.ndx -s /workdir/parity_runs/case1/baseline/model.contacts
 '
 
+MISSING=0
+for f in model.top model.gro model.ndx model.contacts; do
+  if [[ ! -f "$BASE_DIR/$f" ]]; then
+    echo "ERROR: baseline output missing: $BASE_DIR/$f" >&2
+    MISSING=1
+  fi
+done
+if [[ "$MISSING" -ne 0 ]]; then
+  echo "Baseline directory contents:" >&2
+  ls -la "$BASE_DIR" >&2 || true
+  find "$BASE_DIR" -maxdepth 2 -type f -print >&2 || true
+  exit 3
+fi
+
 log "running SMOG3 candidate"
 if ! command -v python3 >/dev/null 2>&1; then
   echo "Missing local python3 for candidate stage. Install python3 and retry." >&2
@@ -70,10 +84,17 @@ if [[ "$MISSING" -ne 0 ]]; then
 fi
 
 log "comparing outputs"
+COMPARE_RC=0
 PYTHONPATH=src python3 -m smog3.parity_direct \
   --compare-existing \
   --baseline-dir "$BASE_DIR" \
   --candidate-dir "$CAND_DIR" \
-  --report-json "$REPORT_JSON"
+  --report-json "$REPORT_JSON" || COMPARE_RC=$?
 
 log "parity report written to $REPORT_JSON"
+log "line-count diagnostics"
+wc -l "$BASE_DIR/model.contacts" "$CAND_DIR/model.contacts"
+wc -l "$BASE_DIR/model.ndx" "$CAND_DIR/model.ndx"
+wc -l "$BASE_DIR/model.top" "$CAND_DIR/model.top"
+
+exit "$COMPARE_RC"
