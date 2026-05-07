@@ -1,0 +1,30 @@
+name: smog3-parity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "work", "main", "master" ]
+  pull_request:
+
+jobs:
+  parity-official-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull official SMOG2 image
+        run: |
+          docker pull smogserver/smog2:stable
+
+      - name: Run parity via official SMOG2 container
+        run: |
+          ./scripts/run_official_smog2_docker_parity.sh
+
+      - name: Upload parity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-case1-report
+          path: parity_case1.json
+          if-no-files-found: warn
