@@ -1,0 +1,16 @@
+{
+  "name": "smog3-parity",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace/SMOG2",
+  "postCreateCommand": "python3 -m pip install --break-system-packages -e .[dev] || python3 -m pip install --break-system-packages -e .",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  }
+}
