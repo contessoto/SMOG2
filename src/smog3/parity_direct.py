@@ -43,6 +43,26 @@ def _run_baseline(case_id: int, outdir: Path) -> tuple[int, str]:
 
 def _run_candidate(case_id: int, outdir: Path) -> tuple[int, str]:
     pdb = ROOT / "SMOG-CHECK" / "share" / "PDB.files" / CASE_PDB[case_id]
+    xml_args = ["-OpenSMOG", "-OpenSMOGxml", "model.xml"] if case_id == 94 else []
+    userc = ["-userContacts", str(ROOT / "SMOG-CHECK" / "share" / "PDB.files" / "2ci2_v2.contacts")] if case_id == 50 else []
+    args = [
+        "python",
+        "-c",
+        "from smog3.smog2_native import main; import sys; raise SystemExit(main(sys.argv[1:]))",
+        "-i",
+        str(pdb),
+        "-o",
+        "model.top",
+        "-g",
+        "model.gro",
+        "-n",
+        "model.ndx",
+        "-s",
+        "model.contacts",
+        *CASE_ARGS[case_id][:1],
+        *userc,
+        *xml_args,
+    ]
     xml_args = []
     if case_id == 94:
         xml_args = ["-OpenSMOG", "-OpenSMOGxml", "model.xml"]
@@ -67,6 +87,17 @@ def _compare_file(a: Path, b: Path) -> dict:
     return {"match": False, "diff": diff[:4000]}
 
 
+def compare_existing_dirs(baseline_dir: Path, candidate_dir: Path, include_xml: bool = False) -> dict:
+    files = ["model.top", "model.gro", "model.ndx", "model.contacts"] + (["model.xml"] if include_xml else [])
+    comps = {f: _compare_file(baseline_dir / f, candidate_dir / f) for f in files}
+    return {
+        "baseline_dir": str(baseline_dir),
+        "candidate_dir": str(candidate_dir),
+        "comparisons": comps,
+        "ok": all(v.get("match") for v in comps.values()),
+    }
+
+
 def run_cases(case_ids: list[int]) -> dict:
     if not _perl_ready():
         return {"skipped": True, "reason": "Perl dependencies missing (XML::Simple/XML::Validator::Schema/PDL)"}
@@ -74,6 +105,8 @@ def run_cases(case_ids: list[int]) -> dict:
     with tempfile.TemporaryDirectory(prefix="smog3-parity-") as td:
         root = Path(td)
         for cid in case_ids:
+            bdir = root / f"baseline_{cid}"
+            cdir = root / f"candidate_{cid}"
             bdir = root / f"baseline_{cid}"; cdir = root / f"candidate_{cid}"
             bdir.mkdir(); cdir.mkdir()
             brc, bout = _run_baseline(cid, bdir)
@@ -89,6 +122,21 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--cases", default="1,21,41,50,56,94")
     p.add_argument("--report-json", default="parity_report.json")
+    p.add_argument("--compare-existing", action="store_true")
+    p.add_argument("--baseline-dir", default=None)
+    p.add_argument("--candidate-dir", default=None)
+    p.add_argument("--include-xml", action="store_true")
+    ns = p.parse_args(argv)
+
+    if ns.compare_existing:
+        if not ns.baseline_dir or not ns.candidate_dir:
+            raise SystemExit("--compare-existing requires --baseline-dir and --candidate-dir")
+        report = compare_existing_dirs(Path(ns.baseline_dir), Path(ns.candidate_dir), include_xml=ns.include_xml)
+        Path(ns.report_json).write_text(json.dumps(report, indent=2))
+        for f, comp in report["comparisons"].items():
+            print(f"{f}: {'OK' if comp.get('match') else 'DIFF'}")
+        return 0 if report.get("ok") else 2
+
     ns = p.parse_args(argv)
     cases = [int(x) for x in ns.cases.split(",") if x.strip()]
     report = run_cases(cases)

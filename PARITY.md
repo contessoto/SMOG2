@@ -114,3 +114,32 @@ This performs:
 - `PYTHONPATH=src python3 -m smog3.parity_direct --cases 1 --report-json parity_case1.json`
 
 If parity fails, send `parity_case1.json` back to Codex for targeted diff fixes.
+
+
+## Two-stage parity workflow (official SMOG2 Docker + local Python SMOG3)
+
+Because `smogserver/smog2:stable` may not include Python, use a two-stage flow:
+
+1. Baseline stage inside official SMOG2 Docker image.
+2. Candidate stage with local `python3` running SMOG3.
+3. Compare existing outputs with `smog3.parity_direct --compare-existing`.
+
+Run from repo root:
+
+```bash
+bash scripts/run_case1_two_stage_parity.sh
+```
+
+This script will:
+- recreate `parity_runs/case1/baseline`
+- recreate `parity_runs/case1/candidate`
+- run baseline SMOG2 in `smogserver/smog2:stable`
+- run candidate SMOG3 locally
+- compare outputs and write `parity_case1.json`
+- exit nonzero if parity fails
+
+You can also run comparator directly:
+
+```bash
+PYTHONPATH=src python3 -m smog3.parity_direct   --compare-existing   --baseline-dir parity_runs/case1/baseline   --candidate-dir parity_runs/case1/candidate   --report-json parity_case1.json
+```
