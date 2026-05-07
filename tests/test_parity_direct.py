@@ -28,3 +28,14 @@ def test_compare_existing_dirs(tmp_path: Path):
     assert report["ok"] is True
     rc = parity_direct.main(["--compare-existing", "--baseline-dir", str(b), "--candidate-dir", str(c), "--report-json", str(tmp_path / "rep.json")])
     assert rc == 0
+
+
+def test_compare_existing_reports_missing_candidate_files(tmp_path: Path):
+    b = tmp_path / "b"; c = tmp_path / "c"
+    b.mkdir(); c.mkdir()
+    for fn in ["model.top", "model.gro", "model.ndx", "model.contacts"]:
+        (b / fn).write_text("baseline\n")
+    report = parity_direct.compare_existing_dirs(b, c)
+    assert report["ok"] is False
+    for fn in ["model.top", "model.gro", "model.ndx", "model.contacts"]:
+        assert report["comparisons"][fn]["reason"] == "missing file"

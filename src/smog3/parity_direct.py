@@ -4,7 +4,6 @@ import argparse
 import difflib
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -63,13 +62,6 @@ def _run_candidate(case_id: int, outdir: Path) -> tuple[int, str]:
         *userc,
         *xml_args,
     ]
-    xml_args = []
-    if case_id == 94:
-        xml_args = ["-OpenSMOG", "-OpenSMOGxml", "model.xml"]
-    userc = []
-    if case_id == 50:
-        userc = ["-userContacts", str(ROOT / "SMOG-CHECK" / "share" / "PDB.files" / "2ci2_v2.contacts")]
-    args = ["python", "-c", "from smog3.smog2_native import main; import sys; raise SystemExit(main(sys.argv[1:]))", "-i", str(pdb), "-o", "model.top", "-g", "model.gro", "-n", "model.ndx", "-s", "model.contacts", *CASE_ARGS[case_id][:1], *userc, *xml_args]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
     env["SMOG3_LEGACY_PERL_FALLBACK"] = "0"
@@ -107,7 +99,6 @@ def run_cases(case_ids: list[int]) -> dict:
         for cid in case_ids:
             bdir = root / f"baseline_{cid}"
             cdir = root / f"candidate_{cid}"
-            bdir = root / f"baseline_{cid}"; cdir = root / f"candidate_{cid}"
             bdir.mkdir(); cdir.mkdir()
             brc, bout = _run_baseline(cid, bdir)
             crc, cout = _run_candidate(cid, cdir)
@@ -137,7 +128,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{f}: {'OK' if comp.get('match') else 'DIFF'}")
         return 0 if report.get("ok") else 2
 
-    ns = p.parse_args(argv)
     cases = [int(x) for x in ns.cases.split(",") if x.strip()]
     report = run_cases(cases)
     Path(ns.report_json).write_text(json.dumps(report, indent=2))

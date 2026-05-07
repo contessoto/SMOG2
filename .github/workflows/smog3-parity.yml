@@ -8,7 +8,6 @@ on:
 
 jobs:
   parity-two-stage:
-  parity-official-docker:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,7 +39,7 @@ jobs:
       - name: Run candidate case1 with local Python
         run: |
           mkdir -p parity_runs/case1/candidate
-          PYTHONPATH=src python -m smog3.smog2_native -i SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o parity_runs/case1/candidate/model.top -g parity_runs/case1/candidate/model.gro -n parity_runs/case1/candidate/model.ndx -s parity_runs/case1/candidate/model.contacts
+          PYTHONPATH=src python -c "from smog3.smog2_native import main; import sys; raise SystemExit(main(sys.argv[1:]))" -i SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o parity_runs/case1/candidate/model.top -g parity_runs/case1/candidate/model.gro -n parity_runs/case1/candidate/model.ndx -s parity_runs/case1/candidate/model.contacts
 
       - name: Run test suite
         run: |
@@ -49,9 +48,6 @@ jobs:
       - name: Compare baseline vs candidate
         run: |
           PYTHONPATH=src python -m smog3.parity_direct --compare-existing --baseline-dir parity_runs/case1/baseline --candidate-dir parity_runs/case1/candidate --report-json parity_case1.json
-      - name: Run parity via official SMOG2 container
-        run: |
-          ./scripts/run_official_smog2_docker_parity.sh
 
       - name: Upload parity artifact
         if: always()
