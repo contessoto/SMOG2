@@ -8,6 +8,7 @@ on:
 
 jobs:
   parity-two-stage:
+  parity-official-docker:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,6 +49,9 @@ jobs:
       - name: Compare baseline vs candidate
         run: |
           PYTHONPATH=src python -m smog3.parity_direct --compare-existing --baseline-dir parity_runs/case1/baseline --candidate-dir parity_runs/case1/candidate --report-json parity_case1.json
+      - name: Run parity via official SMOG2 container
+        run: |
+          ./scripts/run_official_smog2_docker_parity.sh
 
       - name: Upload parity artifact
         if: always()
