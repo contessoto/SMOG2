@@ -34,6 +34,12 @@ def _count_atoms(pdb: Path) -> int:
     return sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
 
 
+def _expected_model_atoms(pdb: Path, mode_args: list[str]) -> int:
+    if any(arg.startswith("-CA") for arg in mode_args):
+        return sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")) and ln[12:16].strip() == "CA")
+    return _count_atoms(pdb)
+
+
 def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path: Path):
     pdb_root = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files"
 
@@ -82,7 +88,7 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
         )
         assert cli.smog2_main() == 0
 
-        natoms = _count_atoms(pdb)
+        natoms = _expected_model_atoms(pdb, mode_args)
         top_text = top.read_text()
         assert "[ atoms ]" in top_text and "[ bonds ]" in top_text and "[ molecules ]" in top_text
         assert int(gro.read_text().splitlines()[1].strip()) == natoms
@@ -95,7 +101,7 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
         assert contacts_node is not None
         contacts_type = contacts_node.find("contacts_type")
         assert contacts_type is not None
-        assert contacts_type.attrib["name"] in {"contact_1-6-12", "contact_gaussian"}
+        assert contacts_type.attrib["name"] in {"contact_1-6-12", "contact_1-10-12", "contact_gaussian"}
         assert contacts_type.find("expression") is not None
 
     assert called["perl"] is False

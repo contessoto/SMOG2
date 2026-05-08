@@ -22,6 +22,12 @@ CASES = [
 ]
 
 
+def _expected_model_atoms(pdb: Path, flags: list[str]) -> int:
+    if any(flag.startswith("-CA") for flag in flags):
+        return sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")) and ln[12:16].strip() == "CA")
+    return sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
+
+
 def test_match_bond_dihe_group_runs_native_without_perl(monkeypatch, tmp_path: Path):
     called = {"perl": False}
 
@@ -43,7 +49,7 @@ def test_match_bond_dihe_group_runs_native_without_perl(monkeypatch, tmp_path: P
         monkeypatch.setattr(cli.sys, "argv", ["smog2", "-i", str(pdb), *flags, "-o", str(top), "-g", str(gro), "-n", str(ndx), "-s", str(contacts)])
         assert cli.smog2_main() == 0
 
-        natoms = sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
+        natoms = _expected_model_atoms(pdb, flags)
         top_txt = top.read_text()
         assert "[ atoms ]" in top_txt and "[ bonds ]" in top_txt and "[ molecules ]" in top_txt
         assert int(gro.read_text().splitlines()[1].strip()) == natoms

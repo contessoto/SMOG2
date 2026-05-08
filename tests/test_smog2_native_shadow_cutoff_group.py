@@ -23,6 +23,15 @@ def _parse_atoms(pdb: Path):
     return atoms
 
 
+def _parse_ca_atoms(pdb: Path):
+    atoms = []
+    for ln in pdb.read_text().splitlines():
+        if ln.startswith(("ATOM", "HETATM")) and ln[12:16].strip() == "CA":
+            x = float(ln[30:38]); y = float(ln[38:46]); z = float(ln[46:54])
+            atoms.append((x, y, z))
+    return atoms
+
+
 def _expected_contacts(atoms, cutoff: float, min_sep: int):
     out = []
     c2 = cutoff * cutoff
@@ -95,14 +104,14 @@ def test_shadow_cutoff_case_group_runs_native_without_perl(monkeypatch, tmp_path
         rc = cli.smog2_main()
         assert rc == 0
 
-        natoms = sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
+        atoms_xyz = _parse_ca_atoms(pdb) if model == "CA" else _parse_atoms(pdb)
+        natoms = len(atoms_xyz)
         assert int(gro.read_text().splitlines()[1].strip()) == natoms
         assert _count_ndx_atoms(ndx) == natoms
         t = top.read_text()
         assert "[ atoms ]" in t and "[ bonds ]" in t and "[ molecules ]" in t
 
         rows = [tuple(ln.split()[:2]) for ln in contacts.read_text().splitlines() if ln.strip()]
-        atoms_xyz = _parse_atoms(pdb)
         min_sep = 3 if model == "AA" else 2
         expected = _expected_contacts(atoms_xyz, abs(param), min_sep)
         assert rows == expected
