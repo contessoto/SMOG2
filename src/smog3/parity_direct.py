@@ -69,12 +69,21 @@ def _run_candidate(case_id: int, outdir: Path) -> tuple[int, str]:
     return p.returncode, p.stdout + p.stderr
 
 
+def _drop_top_header_metadata(lines: list[str]) -> list[str]:
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("["):
+            return lines[idx:]
+    return lines
+
+
 def _compare_file(a: Path, b: Path) -> dict:
     if not a.exists() or not b.exists():
         return {"match": False, "reason": "missing file"}
     ta, tb = a.read_text().splitlines(), b.read_text().splitlines()
     if ta == tb:
         return {"match": True}
+    if a.name == "model.top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
+        return {"match": True, "ignored": "topology header metadata before first section"}
     diff = "\n".join(difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2))
     return {"match": False, "diff": diff[:4000]}
 

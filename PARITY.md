@@ -138,6 +138,10 @@ This script will:
 - compare outputs and write `parity_case1.json`
 - exit nonzero if parity fails
 
+For `model.top`, the comparator ignores only the free-form header metadata
+before the first topology section. Section contents, ordering, and numerical
+values remain strict.
+
 You can also run comparator directly:
 
 ```bash

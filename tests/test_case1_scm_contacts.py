@@ -124,6 +124,18 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
         if current == "pairs" and s and not s.startswith(";"):
             pair_lines.append(s)
     assert pair_lines[0] == "1\t1195\t1\t 3.944505603e-02 7.999533051e-04"
+    dihedral_lines = []
+    current = None
+    for raw in base.with_suffix(".top").read_text().splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            current = s.strip("[] ")
+            continue
+        if current == "dihedrals" and s and not s.startswith(";"):
+            dihedral_lines.append(s)
+    assert dihedral_lines[0] == "1\t2\t3\t4\t1\t 5.559814536e+02 2.303921569e-01 1"
+    assert dihedral_lines[1] == "1\t2\t3\t4\t1\t 1.307944361e+03 1.151960784e-01 3"
+    assert "200\t201\t203\t205\t2\t -7.620696300e-02 4.000000000e+01" in dihedral_lines
 
     top4scm = base.with_name("case1.top4SCM.top")
     counts = {}
