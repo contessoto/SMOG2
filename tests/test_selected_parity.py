@@ -110,6 +110,13 @@ def test_selected_shadow_free_uses_java_scm_parameters(monkeypatch, tmp_path: Pa
     assert seen["mode"] == "shadow"
     assert seen["cutoff"] == 5.0
     assert seen["shadow_size"] == 1.4
+    top_text = base.with_suffix(".top").read_text()
+    assert "  1630       NB_1    211   GLYT      N   1630\n" in top_text
+    assert "  1632       NB_1    211   GLYT      C   1632\n" in top_text
+    assert "1\t2\t3\t9\t1\t 6.712691900e+02 2.329759325e-01 1" in top_text
+    assert "1\t2\t5\t6\t1\t 3.635103138e+02 4.659518649e-01 1" in top_text
+    assert "2\t3\t9\t10\t2\t -1.779624558e+02 5.000000000e+00" in top_text
+    assert ";this is a test comment that will be added under the pairs section." in top_text
 
 
 def test_opensmog_xml_writer_emits_smog2_contact_force_shape(tmp_path: Path):
@@ -124,3 +131,39 @@ def test_opensmog_xml_writer_emits_smog2_contact_force_shape(tmp_path: Path):
     assert '<contacts_type name="contact_1-6-12">' in text
     assert '<expression expr="A/r^12-B/r^6"/>' in text
     assert '<interaction i="1" j="2" A="' in text
+
+
+def test_contact_pair_items_resolves_duplicate_serials_by_group():
+    atoms = [
+        (1, "CA", "ALA", 1, 0.0, 0.0, 0.0, "A"),
+        (2, "CB", "ALA", 1, 1.0, 0.0, 0.0, "A"),
+        (1, "CA", "GLY", 1, 10.0, 0.0, 0.0, "B"),
+        (2, "CB", "GLY", 1, 11.0, 0.0, 0.0, "B"),
+    ]
+
+    assert smog2_native._contact_pair_items(atoms, [(1, 1, ("2", "2"))]) == [(1, 4, None)]
+
+
+def test_chain_groups_attach_blank_chain_records_to_previous_chain():
+    atoms = [
+        (1, "P", "A", 1, 0.0, 0.0, 0.0, "C:1"),
+        (2, "O2*", "A", 1, 1.0, 0.0, 0.0, "C:1"),
+        (1, "N", "PHE", 2, 2.0, 0.0, 0.0, "X:1"),
+        (1, "P", "G", 1, 3.0, 0.0, 0.0, "D:2"),
+    ]
+
+    assert smog2_native._chain_atom_groups(atoms) == [("C:1", [1, 2, 3]), ("D:2", [4])]
+
+
+def test_template_planar_ring_and_crosslink_dihedrals_match_known_counts():
+    root = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files"
+
+    adp_atoms = smog2_native._parse_pdb_atoms(root / "1A01-ADP.pdb")
+    _bonds, _angles, graph_dihedrals, _impropers = smog2_native._bonded_geometry(adp_atoms)
+    proper, improper = smog2_native._case1_dihedrals(adp_atoms, graph_dihedrals)
+    assert len(proper) * 2 + len(improper) == 8272
+
+    trna_atoms = smog2_native._parse_pdb_atoms(root / "tRNA.pdb")
+    _bonds, _angles, graph_dihedrals, _impropers = smog2_native._bonded_geometry(trna_atoms)
+    proper, improper = smog2_native._case1_dihedrals(trna_atoms, graph_dihedrals)
+    assert len(proper) * 2 + len(improper) == 14263

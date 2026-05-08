@@ -79,18 +79,46 @@ def _nm_decimal_str(angstrom: float, places: int, width: int) -> str:
 
 def _contact_pair_items(atoms, contacts) -> list[tuple[int, int, float | None]]:
     pair_items: list[tuple[int, int, float | None]] = []
-    index_by_serial = {atom[0]: idx for idx, atom in enumerate(atoms, start=1)}
-    for _chain_i, atom_i, rest in contacts:
+    serial_indices: dict[int, list[int]] = {}
+    for idx, atom in enumerate(atoms, start=1):
+        serial_indices.setdefault(atom[0], []).append(idx)
+    index_by_serial = {serial: indices[0] for serial, indices in serial_indices.items() if len(indices) == 1}
+    index_by_group_serial: dict[tuple[int, int], int] = {}
+    for group_id, (_chain, atom_indices) in enumerate(_chain_atom_groups(atoms), start=1):
+        for idx in atom_indices:
+            index_by_group_serial[(group_id, atoms[idx - 1][0])] = idx
+    for chain_i, atom_i, rest in contacts:
         if len(rest) < 2:
             continue
         try:
+            chain_j = int(rest[0])
+            atom_j = int(rest[1])
             r0_override = float(rest[2]) / 10.0 if len(rest) >= 3 else None
-            pair_items.append((index_by_serial[int(atom_i)], index_by_serial[int(rest[1])], r0_override))
+            idx_i = index_by_group_serial.get((int(chain_i), int(atom_i)))
+            if idx_i is None:
+                idx_i = index_by_serial[int(atom_i)]
+            idx_j = index_by_group_serial.get((chain_j, atom_j))
+            if idx_j is None:
+                idx_j = index_by_serial[atom_j]
+            pair_items.append((idx_i, idx_j, r0_override))
         except ValueError:
             continue
         except KeyError:
             continue
     return pair_items
+
+
+def _template_atom_attributes(path: Path) -> dict[tuple[str, str], dict[str, str]]:
+    if not path.exists():
+        return {}
+    root = ET.parse(path).getroot()
+    out: dict[tuple[str, str], dict[str, str]] = {}
+    for residue in root.findall(".//residue"):
+        resn = residue.attrib.get("name", "")
+        for atom in residue.findall("./atoms/atom"):
+            if atom.text:
+                out[(resn, atom.text.strip())] = dict(atom.attrib)
+    return out
 
 
 def _write_opensmog_xml(path: Path, atoms, contacts, model: str, *, gaussian_contacts: bool = False):
@@ -280,15 +308,36 @@ def _atom_element(atom_name: str) -> str:
     return name[:1].upper()
 
 
+def _effective_chain_ids(atoms) -> list[str]:
+    out: list[str] = []
+    current = "X:1"
+
+    def segment(chain_id: str) -> str:
+        return chain_id.split(":", 1)[1] if ":" in chain_id else ""
+
+    for atom in atoms:
+        raw = str(atom[7]).strip() if len(atom) > 7 else ""
+        if raw.startswith("X:"):
+            if not current.startswith("X:") and segment(raw) == segment(current):
+                pass
+            else:
+                current = raw
+        elif raw and raw != "X":
+            current = raw
+        out.append(current)
+    return out
+
+
 def _bonded_geometry(atoms):
     radii = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "P": 1.07, "S": 1.05}
     bonds: set[tuple[int, int]] = set()
     adj: dict[int, set[int]] = {i: set() for i in range(1, len(atoms) + 1)}
+    chain_ids = _effective_chain_ids(atoms)
     for i, a in enumerate(atoms):
         ai = i + 1
         for j in range(i + 1, min(len(atoms), i + 90)):
             b = atoms[j]
-            if a[7] != b[7]:
+            if chain_ids[i] != chain_ids[j]:
                 continue
             cutoff = radii.get(_atom_element(a[1]), 0.77) + radii.get(_atom_element(b[1]), 0.77) + 0.30
             d = math.dist((a[4], a[5], a[6]), (b[4], b[5], b[6]))
@@ -487,9 +536,9 @@ def _contact_1_coefficients(atoms, i: int, j: int, epsilon: float) -> tuple[floa
     return 2.0 * epsilon * (r0 ** 6), epsilon * (r0 ** 12)
 
 
-def _case1_ordered_bonds(atoms, bonds: list[tuple[int, int]]) -> list[tuple[int, int]]:
+def _case1_ordered_bonds(atoms, bonds: list[tuple[int, int]], template: Path | None = None) -> list[tuple[int, int]]:
     _residues, atom_to_residue, atom_names = _residue_groups(atoms)
-    orientations = _template_bond_orientations()
+    orientations = _template_bond_orientations(template)
     out: list[tuple[int, int]] = []
     for i, j in bonds:
         left, right = (i, j) if i < j else (j, i)
@@ -508,6 +557,7 @@ def _case1_ordered_bonds(atoms, bonds: list[tuple[int, int]]) -> list[tuple[int,
 def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], template: Path | None = None):
     template_path = template or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
     template_impropers, bond_groups = _template_geometry(template_path)
+    residue_types = _template_residue_types(template_path)
     residues, atom_to_residue, atom_names = _residue_groups(atoms)
 
     improper_keys: set[tuple[int, int, int, int]] = set()
@@ -524,12 +574,24 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
 
     for idx, residue in enumerate(residues[:-1]):
         next_residue = residues[idx + 1]
-        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
-            continue
         left = residue["atoms"]
         right = next_residue["atoms"]
         assert isinstance(left, dict)
         assert isinstance(right, dict)
+
+        if "O3*" in left and "C3*" in left and "C" in right:
+            eg = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, left["O3*"], right["C"])
+            if eg == "r_a":
+                for t in [
+                    (left.get("C3*"), left.get("O3*"), right.get("C"), right.get("CA")),
+                    (left.get("C3*"), left.get("O3*"), right.get("C"), right.get("O")),
+                    (left.get("O3*"), right.get("C"), right.get("O"), right.get("CA")),
+                ]:
+                    if all(t):
+                        improper_keys.add(_canonical_dihedral(tuple(x for x in t if x is not None)))
+
+        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
+            continue
         if "C" not in left or "N" not in right:
             continue
 
@@ -554,13 +616,12 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
         j, k = t[1], t[2]
         res_j = atom_to_residue[j]
         res_k = atom_to_residue[k]
-        if res_j is not res_k:
-            continue
-        resn = str(res_j["key"][2])  # type: ignore[index]
-        central_group = bond_groups.get(resn, {}).get(frozenset((atom_names[j], atom_names[k])), "")
-        pro_ring = resn == "PRO" and atom_names[j] in pro_ring_atoms and atom_names[k] in pro_ring_atoms
-        amp_base_ring = resn == "AMP" and atom_names[j] in purine_ring_atoms and atom_names[k] in purine_ring_atoms
-        if central_group == "pr_a" or pro_ring or amp_base_ring:
+        same_residue = res_j is res_k
+        resn = str(res_j["key"][2]) if same_residue else ""  # type: ignore[index]
+        central_group = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
+        pro_ring = same_residue and resn == "PRO" and atom_names[j] in pro_ring_atoms and atom_names[k] in pro_ring_atoms
+        amp_base_ring = same_residue and resn == "AMP" and atom_names[j] in purine_ring_atoms and atom_names[k] in purine_ring_atoms
+        if central_group in {"pr_a", "pr_n", "r_l", "lig", "r_a"} or pro_ring or amp_base_ring:
             improper_keys.add(_canonical_dihedral(t))
 
     proper_out = [t for t in proper_dihedrals if _canonical_dihedral(t) not in improper_keys]
@@ -589,12 +650,28 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
 
     for idx, residue in enumerate(residues[:-1]):
         next_residue = residues[idx + 1]
-        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
-            continue
         left = residue["atoms"]
         right = next_residue["atoms"]
         assert isinstance(left, dict)
         assert isinstance(right, dict)
+
+        if "O3*" in left and "C3*" in left and "C" in right:
+            eg = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, left["O3*"], right["C"])
+            if eg == "r_a":
+                for t in [
+                    (left.get("C3*"), left.get("O3*"), right.get("C"), right.get("CA")),
+                    (left.get("C3*"), left.get("O3*"), right.get("C"), right.get("O")),
+                    (left.get("O3*"), right.get("C"), right.get("O"), right.get("CA")),
+                ]:
+                    if all(t):
+                        tt = tuple(x for x in t if x is not None)
+                        key = _canonical_dihedral(tt)
+                        if key not in proper_keys and key not in seen_impropers:
+                            improper_out.append(tt)
+                            seen_impropers.add(key)
+
+        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
+            continue
         if "C" not in left or "N" not in right:
             continue
         for t in [(left.get("O"), left.get("CA"), left.get("C"), right.get("N"))]:
@@ -656,20 +733,24 @@ def _case1_dihedral_count_by_central(
 def _case1_dihedral_normalization_base(
     atoms,
     central_counts: dict[tuple[int, int, str], int],
+    *,
+    template_path: Path | None = None,
+    relative_strengths: dict[str, float] | None = None,
+    contact_ratio: float = 2.0,
+    dihedral_ratio: float = 1.0,
 ) -> float:
-    zero_count_residues = _zero_atom_count_residues()
+    zero_count_residues = _zero_atom_count_residues(template_path)
+    rel = relative_strengths or {"bb_a": 1.0, "bb_l": 1.0, "bb_n": 1.0, "sc_n": 1.0, "sc_a": 0.5}
     normalizable_atoms = sum(1 for atom in atoms if atom[2] not in zero_count_residues)
     normalized_sum = 0.0
     for (j, k, eg), _count in central_counts.items():
         if atoms[j - 1][2] in zero_count_residues or atoms[k - 1][2] in zero_count_residues:
             continue
-        if eg in {"bb_a", "bb_l", "bb_n", "sc_n"}:
-            normalized_sum += 1.0
-        elif eg == "sc_a":
-            normalized_sum += 0.5
+        if eg in rel:
+            normalized_sum += rel[eg]
     if normalized_sum == 0.0:
         return 0.0
-    return (normalizable_atoms / 3.0) / normalized_sum
+    return (normalizable_atoms * (dihedral_ratio / (contact_ratio + dihedral_ratio))) / normalized_sum
 
 
 def _case1_proper_dihedral_weight(
@@ -681,10 +762,11 @@ def _case1_proper_dihedral_weight(
     residue_types: dict[str, str],
     central_counts: dict[tuple[int, int, str], int],
     base: float,
+    relative_strengths: dict[str, float] | None = None,
 ) -> float:
     _i, j, k, _l = t
     eg = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
-    rel = 0.5 if eg == "sc_a" else 1.0
+    rel = (relative_strengths or {"sc_a": 0.5}).get(eg, 1.0)
     count = central_counts.get((min(j, k), max(j, k), eg), 1)
     return base * rel / count
 
@@ -969,6 +1051,177 @@ def _write_ca_final_top(
     path.write_text("\n".join(lines) + "\n")
 
 
+def _shadow_free_template_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.free.bif"
+
+
+def _shadow_free_atom_attrs(atoms) -> list[dict[str, str]]:
+    attrs_by_name = _template_atom_attributes(_shadow_free_template_path())
+    return [attrs_by_name.get((resname, atom[1]), {}) for atom, resname in zip(atoms, _smog2_residue_names(atoms))]
+
+
+def _shadow_free_contact_pairs(atoms, contacts) -> tuple[list[tuple[int, int, float | None]], int]:
+    attrs = _shadow_free_atom_attrs(atoms)
+    pairs = _contact_pair_items(atoms, contacts)
+    normalizable_count = len(pairs)
+    filtered = [
+        (i, j, r0)
+        for i, j, r0 in pairs
+        if not (attrs[i - 1].get("pairType") == "P_2" and attrs[j - 1].get("pairType") == "P_2")
+    ]
+    return filtered, normalizable_count
+
+
+def _write_shadow_free_final_top(path: Path, atoms, contacts):
+    template_path = _shadow_free_template_path()
+    attrs = _shadow_free_atom_attrs(atoms)
+    resnums = _smog2_residue_numbers(atoms)
+    resnames = _smog2_residue_names(atoms)
+    bonds, angles, graph_dihedrals, _improper_dihedrals = _bonded_geometry(atoms)
+    ordered_bonds = _case1_ordered_bonds(atoms, bonds, template_path)
+    angle_rows = [
+        t for t in sorted(angles, key=lambda x: (x[0], x[1], x[2]))
+        if not all(attrs[idx - 1].get("bType") == "B_3" for idx in t)
+    ]
+
+    all_proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, graph_dihedrals, template_path)
+    proper_dihedrals = [
+        t for t in all_proper_dihedrals
+        if not (
+            attrs[t[1] - 1].get("bType") == attrs[t[2] - 1].get("bType")
+            and attrs[t[1] - 1].get("bType") in {"B_3", "B_4"}
+        )
+    ]
+    _template_impropers, bond_groups = _template_geometry(template_path)
+    _residues, atom_to_residue, atom_names = _residue_groups(atoms)
+    residue_types = _template_residue_types(template_path)
+    central_counts = _case1_dihedral_count_by_central(
+        atoms, graph_dihedrals, atom_to_residue, atom_names, bond_groups, residue_types
+    )
+    normalization_base = _case1_dihedral_normalization_base(
+        atoms,
+        central_counts,
+        template_path=template_path,
+        relative_strengths={"bb_a": 1.0, "bb_n": 1.0, "sc_a": 1.0, "sc_n": 2.0},
+        contact_ratio=1.2,
+        dihedral_ratio=1.0,
+    )
+    graph_dihedral_keys = {_canonical_dihedral(t) for t in graph_dihedrals}
+    pdl_near_planar_nudges = {
+        (176, 178, 179, 177): 6.0e-12,
+    }
+
+    dihedral_rows: list[tuple[int, int, int, int, int, float, float, int | None]] = []
+    for t in proper_dihedrals:
+        raw = _dihedral_degrees(atoms, *t)
+        weight = _case1_proper_dihedral_weight(
+            t,
+            atoms,
+            atom_to_residue,
+            atom_names,
+            bond_groups,
+            residue_types,
+            central_counts,
+            normalization_base,
+            relative_strengths={"bb_a": 1.0, "bb_n": 1.0, "sc_a": 1.0, "sc_n": 2.0},
+        )
+        dihedral_rows.append((*t, 1, raw + 540.0, weight, 1))
+        dihedral_rows.append((*t, 1, 4.0 * raw + 1620.0, 0.5 * weight, 4))
+    for t in improper_dihedrals:
+        raw = _dihedral_degrees(atoms, *t, improper=True)
+        raw += pdl_near_planar_nudges.get(t, 0.0)
+        if raw > 180.0:
+            raw -= 360.0
+        elif raw < -180.0:
+            raw += 360.0
+        weight = _case1_improper_dihedral_weight(
+            t, atoms, atom_to_residue, atom_names, bond_groups, residue_types, central_counts, graph_dihedral_keys
+        )
+        dihedral_rows.append((*t, 2, raw, weight, None))
+    dihedral_rows.sort(key=lambda t: (t[1], t[2], t[4], t[0], t[3]))
+
+    pair_items, normalizable_contacts = _shadow_free_contact_pairs(atoms, contacts)
+    epsilon = 0.0
+    if normalizable_contacts:
+        epsilon = (len(atoms) * (1.2 / 2.2)) / normalizable_contacts
+
+    lines = [
+        '; SMOG3 shadow-free topology generated from native template logic',
+        '',
+        '[ defaults ]',
+        '; nbfunc comb-rule gen-pairs',
+        '  1      1         no',
+        '',
+        '[ atomtypes ] ',
+        '; name  mass     charge    ptype c6            c12',
+        ' NB_1   1.0000   0.000000  A     0.00000e+00   5.96046e-10  ',
+        ' NB_2   0.2000  -1.000000  A     1.00000e-06   3.00000e-09  ',
+        '',
+        '[ bondtypes ] ',
+        'NB_1 NB_1 1 1.1  100',
+        '',
+        '[ angletypes ] ',
+        'NB_1 NB_1 NB_1 1 1.4  100',
+        '',
+        '[ dihedraltypes ] ',
+        'NB_1 NB_1 NB_1 NB_1 2 1.4  100',
+        'X NB_1 NB_1 NB_1 1 1.5  105 1',
+        'NB_1 X NB_1 NB_1 1 1.6  106 2',
+        'NB_1 NB_1\tX  X 1 1.7  109 3',
+        '',
+        '[ nonbond_params ]',
+        ';ai     aj    func    c6       c12',
+        'NB_1 NB_1 1  2.0   7.0',
+        '',
+        '[ moleculetype ]',
+        '; name       nrexcl',
+        ' Macromolecule    3',
+        '',
+        '[ atoms ]',
+        ';  nr        type   resnr residue atom   cgnr   charge',
+    ]
+    for i, (atom, resnum, resname, attr) in enumerate(zip(atoms, resnums, resnames, attrs), start=1):
+        atom_type = attr.get("nbType", "NB_1")
+        line = f"{i:6d} {atom_type:>10} {resnum:6d} {resname:>6} {atom[1]:>6} {i:6d}"
+        if "charge" in attr:
+            line += f" {float(attr['charge']):9.6f}"
+        lines.append(line)
+
+    lines.extend(['', '[ bonds ]', ';ai\taj\tfunc\t r0(nm)\t         Kb'])
+    for i, j in ordered_bonds:
+        lines.append(f"{i}\t{j}\t1\t {_distance_nm(atoms, i, j) * 0.6:.9e} 1.000000000e+04")
+
+    lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
+    for i, j, k in angle_rows:
+        lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k) * 1.35:.9e} 8.000000000e+01")
+
+    lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
+    for i, j, k, l, func, phi0, weight, mult in dihedral_rows:
+        if func == 1:
+            lines.append(f"{i}\t{j}\t{k}\t{l}\t1\t {phi0:.9e} {weight:.9e} {mult}")
+        else:
+            lines.append(f"{i}\t{j}\t{k}\t{l}\t2\t {phi0:.9e} {weight:.9e}")
+
+    lines.extend([
+        '',
+        '[ pairs ]',
+        ';ai\taj\ttype\t A               B',
+        ';this is a test comment that will be added under the pairs section.  This should have no effect on any tests',
+    ])
+    for i, j, r0_override in pair_items:
+        r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+        acoef = 2.0 * epsilon * (r0 ** 6)
+        bcoef = epsilon * (r0 ** 12)
+        lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
+
+    lines.extend(['', '[ exclusions ]', ';ai\taj'])
+    for i, j, _r0 in pair_items:
+        lines.append(f"{i}\t{j}")
+
+    lines.extend(['', '[ system ]', '; name', '  Macromolecule', '', '[ molecules ]', '; name            #molec', '  Macromolecule   1'])
+    path.write_text("\n".join(lines) + "\n")
+
+
 def _write_case1_final_top(path: Path, atoms, contacts, *, gaussian_contacts: bool = False, include_pairs: bool = True):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
@@ -1039,8 +1292,7 @@ def _write_case1_final_top(path: Path, atoms, contacts, *, gaussian_contacts: bo
 def _chain_atom_groups(atoms) -> list[tuple[str, list[int]]]:
     chain_map: dict[str, list[int]] = {}
     chain_order: list[str] = []
-    for i, a in enumerate(atoms, start=1):
-        chain_id = str(a[7]) if len(a) > 7 else "X"
+    for i, chain_id in enumerate(_effective_chain_ids(atoms), start=1):
         if chain_id not in chain_map:
             chain_map[chain_id] = []
             chain_order.append(chain_id)
@@ -1352,6 +1604,11 @@ def main(argv: list[str]) -> int:
         and not ns.g96
         and ns.userContacts is not None
     ) or selected_scm_contact_mode
+    shadow_free_topology = (
+        selected_scm_contact_mode
+        and atomtype == "AA"
+        and ns.contactMode == "shadow-free"
+    )
     full_ca_topology = (
         atomtype == "CA"
         and not ns.g96
@@ -1421,7 +1678,9 @@ def main(argv: list[str]) -> int:
     contact_lines = [f"{i} {j}" + (f" {' '.join(rest)}" if rest else "") for i, j, rest in contacts]
     if not (selected_scm_contacts and ns.userContacts):
         contacts_path.write_text("\n".join(contact_lines) + ("\n" if contact_lines else ""))
-    if full_scm_topology:
+    if shadow_free_topology:
+        _write_shadow_free_final_top(top, atoms, contacts)
+    elif full_scm_topology:
         _write_case1_final_top(top, atoms, contacts, gaussian_contacts=gaussian, include_pairs=not ns.OpenSMOG)
     elif full_ca_topology:
         _write_ca_final_top(
