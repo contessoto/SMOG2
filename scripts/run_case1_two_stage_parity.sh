@@ -35,7 +35,7 @@ docker run --rm -v "$PWD":/workdir smogserver/smog2:stable bash -lc '
 set -euo pipefail
 cd /workdir
 mkdir -p parity_runs/case1/baseline
-smog2 -i /workdir/SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -o /workdir/parity_runs/case1/baseline/model.top -g /workdir/parity_runs/case1/baseline/model.gro -n /workdir/parity_runs/case1/baseline/model.ndx -s /workdir/parity_runs/case1/baseline/model.contacts
+smog2 -i /workdir/SMOG-CHECK/share/PDB.files/1A01-AMP.pdb -AA -keep4SCM -o /workdir/parity_runs/case1/baseline/model.top -g /workdir/parity_runs/case1/baseline/model.gro -n /workdir/parity_runs/case1/baseline/model.ndx -s /workdir/parity_runs/case1/baseline/model.contacts
 '
 
 MISSING=0

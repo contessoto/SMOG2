@@ -58,7 +58,20 @@ def test_case1_scm_contact_generation_uses_java_not_perl(monkeypatch, tmp_path: 
     assert calls[0][0] == "/usr/bin/java"
     assert "-jar" in calls[0]
     assert calls[0][calls[0].index("-ch") + 1] == str(base.with_suffix(".ndx"))
+    assert calls[0][calls[0].index("-t") + 1] == str(base.with_suffix(".top").with_name("case1.top4SCM.top"))
+    for flag, value in [("-m", "shadow"), ("-c", "6"), ("-s", "1"), ("-br", "0.5"), ("-pd", "3")]:
+        assert calls[0][calls[0].index(flag) + 1] == value
+    assert "-bif" in calls[0]
+    assert "--smog2output" in calls[0]
+    assert "--showProgress" in calls[0]
+    assert "--default" not in calls[0]
     assert base.with_suffix(".contacts").read_text() == "1 2 3 4\n"
+    top4scm = base.with_suffix(".top").with_name("case1.top4SCM.top")
+    assert top4scm.exists()
+    top_text = top4scm.read_text()
+    assert "[ bonds ]" in top_text
+    assert "[ angles ]" in top_text
+    assert "[ dihedrals ]" in top_text
 
 
 def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path):
@@ -81,7 +94,46 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
     assert rc == 0
     contact_lines = [line for line in base.with_suffix(".contacts").read_text().splitlines() if line.strip()]
     assert contact_lines
-    assert base.with_name("case1.gro4SCM.gro").exists()
+    assert len(contact_lines) > 3306
+    assert "1 53 4 2698" in contact_lines
+
+    final_counts = {}
+    current = None
+    for raw in base.with_suffix(".top").read_text().splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            current = s.strip("[] ")
+            final_counts[current] = 0
+        elif current and s and not s.startswith(";"):
+            final_counts[current] += 1
+    assert final_counts["atoms"] == 2702
+    assert final_counts["bonds"] == 2766
+    assert final_counts["angles"] == 3737
+    assert final_counts["pairs"] == len(contact_lines)
+    assert final_counts["exclusions"] == len(contact_lines)
+
+    top4scm = base.with_name("case1.top4SCM.top")
+    counts = {}
+    current = None
+    for raw in top4scm.read_text().splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            current = s.strip("[] ")
+            counts[current] = 0
+        elif current and s and not s.startswith(";"):
+            counts[current] += 1
+    assert counts["atoms"] == 2702
+    assert counts["bonds"] == 2766
+    assert counts["angles"] == 3737
+    assert counts["dihedrals"] > 8000
+    gro4scm = base.with_name("case1.gro4SCM.gro")
+    assert gro4scm.exists()
+    lines = gro4scm.read_text().splitlines()
+    assert lines[0] == "Temp Gro file with PDB precision for SCM calculations."
+    assert int(lines[1]) == 2702
+    assert lines[2].startswith("    1VAL      N    1")
+    assert ".7853" in lines[2]
+    assert lines[-1].split() == ["8.3908", "7.01", "9.5239"]
 
 
 def test_case1_parity_script_cleans_outputs_and_prints_diagnostics():
@@ -90,5 +142,6 @@ def test_case1_parity_script_cleans_outputs_and_prints_diagnostics():
     assert 'rm -f "$REPORT_JSON"' in script
     assert 'mkdir -p "$BASE_DIR" "$CAND_DIR"' in script
     assert "ERROR: baseline output missing" in script
+    assert "-keep4SCM" in script
     assert 'wc -l "$BASE_DIR/model.contacts" "$CAND_DIR/model.contacts"' in script
     assert 'exit "$COMPARE_RC"' in script
