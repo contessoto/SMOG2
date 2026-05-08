@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -89,7 +97,7 @@ def test_shadow_cutoff_case_group_runs_native_without_perl(monkeypatch, tmp_path
 
         natoms = sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
         assert int(gro.read_text().splitlines()[1].strip()) == natoms
-        assert len([x for x in ndx.read_text().split() if x.isdigit()]) == natoms
+        assert _count_ndx_atoms(ndx) == natoms
         t = top.read_text()
         assert "[ atoms ]" in t and "[ bonds ]" in t and "[ molecules ]" in t
 

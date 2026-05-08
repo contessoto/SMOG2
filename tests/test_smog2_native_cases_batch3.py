@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -67,7 +75,7 @@ def test_next_ten_direct_cases_use_native_without_perl(monkeypatch, tmp_path: Pa
 
         top_text = top.read_text()
         gro_lines = gro.read_text().splitlines()
-        ndx_tokens = [x for x in ndx.read_text().split() if x.isdigit()]
+        ndx_atoms = _count_ndx_atoms(ndx)
         contact_lines = [ln for ln in contacts.read_text().splitlines() if ln.strip()]
 
         pdb_atoms, pdb_residues = _pdb_counts(pdb)
@@ -77,7 +85,7 @@ def test_next_ten_direct_cases_use_native_without_perl(monkeypatch, tmp_path: Pa
 
         assert int(gro_lines[1].strip()) == pdb_atoms
         assert top_atoms == pdb_atoms
-        assert len(ndx_tokens) == pdb_atoms
+        assert ndx_atoms == pdb_atoms
         assert top_bonds == max(0, pdb_atoms - 1)
         assert top_molecules == 1
         assert pdb_residues >= 1

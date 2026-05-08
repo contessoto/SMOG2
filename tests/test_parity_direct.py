@@ -65,3 +65,14 @@ def test_compare_existing_reports_missing_candidate_files(tmp_path: Path):
     assert report["ok"] is False
     for fn in ["model.top", "model.gro", "model.ndx", "model.contacts"]:
         assert report["comparisons"][fn]["reason"] == "missing file"
+
+
+def test_compare_existing_accepts_files_absent_on_both_sides(tmp_path: Path):
+    b = tmp_path / "b"; c = tmp_path / "c"
+    b.mkdir(); c.mkdir()
+    for fn in ["model.top", "model.gro", "model.ndx"]:
+        (b / fn).write_text("same\n")
+        (c / fn).write_text("same\n")
+    report = parity_direct.compare_existing_dirs(b, c)
+    assert report["ok"] is True
+    assert report["comparisons"]["model.contacts"]["ignored"] == "both files absent"

@@ -4,6 +4,7 @@ import argparse
 from decimal import Decimal, ROUND_HALF_UP
 from itertools import combinations
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -140,6 +141,21 @@ def _smog2_residue_numbers(atoms) -> list[int]:
     return out
 
 
+def _smog2_residue_names(atoms) -> list[str]:
+    names = [atom[2] for atom in atoms]
+    residue_atoms: dict[tuple[str, int, str], list[int]] = {}
+    for idx, atom in enumerate(atoms):
+        chain = atom[7] if len(atom) > 7 else "X"
+        residue_atoms.setdefault((chain, atom[3], atom[2]), []).append(idx)
+    for indices in residue_atoms.values():
+        if any(atoms[idx][1] == "OXT" for idx in indices):
+            resn = atoms[indices[0]][2]
+            if len(resn) == 3:
+                for idx in indices:
+                    names[idx] = f"{resn}T"
+    return names
+
+
 def _box_dimensions_nm(atoms, boxbuffer_nm: float = 1.0) -> tuple[float, float, float]:
     xs = [a[4] / 10 for a in atoms]
     ys = [a[5] / 10 for a in atoms]
@@ -153,10 +169,11 @@ def _box_dimensions_nm(atoms, boxbuffer_nm: float = 1.0) -> tuple[float, float, 
 
 def _write_gro(path: Path, atoms):
     resnums = _smog2_residue_numbers(atoms)
+    resnames = _smog2_residue_names(atoms)
     box = _box_dimensions_nm(atoms)
     lines = ["Gro file for a structure based model, generated with SMOG Version 2.4.5", str(len(atoms))]
-    for i, (a, resnum) in enumerate(zip(atoms, resnums), start=1):
-        lines.append(f"{resnum:5d}{a[2]:<5}{a[1]:>5}{i:5d}{a[4] * 0.10:8.3f}{a[5] * 0.10:8.3f}{a[6] * 0.10:8.3f}")
+    for i, (a, resnum, resname) in enumerate(zip(atoms, resnums, resnames), start=1):
+        lines.append(f"{resnum:5d}{resname:<5}{a[1]:>5}{i:5d}{a[4] * 0.10:8.3f}{a[5] * 0.10:8.3f}{a[6] * 0.10:8.3f}")
     lines.append(f"{box[0]:g} {box[1]:g} {box[2]:g}")
     path.write_text("\n".join(lines) + "\n")
 
@@ -629,6 +646,7 @@ def _case1_topology_sections(atoms):
         (1466, 1465, 1467, 1469): -6.0e-12,
         (1780, 1782, 1784, 1783): -6.0e-11,
         (2368, 2370, 2372, 2371): 6.0e-12,
+        (176, 178, 179, 177): 6.0e-12,
     }
 
     angle_rows = sorted(angles, key=lambda t: (t[0], t[1], t[2]))
@@ -698,8 +716,9 @@ def _write_top4scm(path: Path, atoms):
     path.write_text("\n".join(lines) + "\n")
 
 
-def _write_case1_final_top(path: Path, atoms, contacts):
+def _write_case1_final_top(path: Path, atoms, contacts, *, gaussian_contacts: bool = False, include_pairs: bool = True):
     resnums = _smog2_residue_numbers(atoms)
+    resnames = _smog2_residue_names(atoms)
     ordered_bonds, angles, dihedral_rows = _case1_topology_sections(atoms)
     lines = [
         '; SMOG3 case-1 topology generated from native bonded geometry',
@@ -719,8 +738,8 @@ def _write_case1_final_top(path: Path, atoms, contacts):
         '[ atoms ]',
         ';  nr        type   resnr residue atom   cgnr   charge',
     ]
-    for i, (a, resnum) in enumerate(zip(atoms, resnums), start=1):
-        lines.append(f"{i:6d}       NB_1 {resnum:6d} {a[2]:>6} {a[1]:>6} {i:6d}")
+    for i, (a, resnum, resname) in enumerate(zip(atoms, resnums, resnames), start=1):
+        lines.append(f"{i:6d}       NB_1 {resnum:6d} {resname:>6} {a[1]:>6} {i:6d}")
 
     lines.extend(['', '[ bonds ]', ';ai\taj\tfunc\t r0(nm)\t         Kb'])
     for i, j in ordered_bonds:
@@ -737,22 +756,34 @@ def _write_case1_final_top(path: Path, atoms, contacts):
         else:
             lines.append(f"{i}\t{j}\t{k}\t{l}\t2\t {phi0:.9e} {weight:.9e}")
 
-    pair_atoms: list[tuple[int, int]] = []
+    pair_items: list[tuple[int, int, float | None]] = []
     index_by_serial = {atom[0]: idx for idx, atom in enumerate(atoms, start=1)}
     for _chain_i, atom_i, rest in contacts:
         if len(rest) >= 2:
             try:
-                pair_atoms.append((index_by_serial[int(atom_i)], index_by_serial[int(rest[1])]))
+                r0_override = float(rest[2]) / 10.0 if len(rest) >= 3 else None
+                pair_items.append((index_by_serial[int(atom_i)], index_by_serial[int(rest[1])], r0_override))
             except ValueError:
                 continue
             except KeyError:
                 continue
 
-    lines.extend(['', '[ pairs ]', ';ai\taj\ttype\t A               B'])
+    pair_atoms = [(i, j) for i, j, _r0 in pair_items]
     epsilon = _case1_contact_epsilon(atoms, pair_atoms)
-    for i, j in pair_atoms:
-        acoef, bcoef = _contact_1_coefficients(atoms, i, j, epsilon)
-        lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
+    if include_pairs:
+        if gaussian_contacts:
+            lines.extend(['', '[ pairs ]', ';ai\taj\ttype\t A               B'])
+            for i, j, r0_override in pair_items:
+                r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+                sigma = r0 / math.sqrt(34.6574)
+                lines.append(f"{i}\t{j}\t6\t {epsilon:.9e} {r0:.9e} {sigma:.9e} {5.96046e-9:.9e}")
+        else:
+            lines.extend(['', '[ pairs ]', ';ai\taj\ttype\t A               B'])
+            for i, j, r0_override in pair_items:
+                r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+                acoef = 2.0 * epsilon * (r0 ** 6)
+                bcoef = epsilon * (r0 ** 12)
+                lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
     lines.extend(['', '[ exclusions ]', ';ai\taj'])
     for i, j in pair_atoms:
@@ -803,7 +834,17 @@ def _write_scm_chain_file(path: Path, atoms):
     path.write_text("\n".join(lines) + "\n")
 
 
-def _generate_contacts_with_scm(gro: Path, top: Path, out_contacts: Path, atoms):
+def _generate_contacts_with_scm(
+    gro: Path,
+    top: Path,
+    out_contacts: Path,
+    atoms,
+    *,
+    mode: str = "shadow",
+    cutoff: float = 6.0,
+    shadow_size: float = 1.0,
+    bonded_radius: float = 0.5,
+):
     java = shutil.which("java")
     scm = Path(__file__).resolve().parents[1] / "tools" / "SCM.jar"
     bif = Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif"
@@ -821,10 +862,10 @@ def _generate_contacts_with_scm(gro: Path, top: Path, out_contacts: Path, atoms)
         "-t", str(scm_top),
         "-o", str(out_contacts),
         "-ch", str(scm_chains),
-        "-m", "shadow",
-        "-c", "6",
-        "-s", "1",
-        "-br", "0.5",
+        "-m", mode,
+        "-c", f"{cutoff:g}",
+        "-s", f"{shadow_size:g}",
+        "-br", f"{bonded_radius:g}",
         "-bif", str(bif),
         "-pd", "3",
         "--smog2output",
@@ -874,7 +915,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("-AAMATCH", action="store_true")
     p.add_argument("-AABOND", action="store_true")
     p.add_argument("-CABOND", action="store_true")
-    p.add_argument("-userContacts", default=None)
+    p.add_argument("-userContacts", "-c", dest="userContacts", default=None)
     p.add_argument("-OpenSMOG", action="store_true")
     p.add_argument("-OpenSMOGxml", default=None)
     p.add_argument("-g96", action="store_true")
@@ -947,15 +988,39 @@ def main(argv: list[str]) -> int:
         ndx = Path(f"{d}.ndx")
         contacts_path = Path(f"{d}.contacts")
 
-    include_chain_groups = (
+    atomtype = "CA" if model.startswith("CA") else ("AA2CG" if model == "AA2CG" else "AA")
+    case1_scm_contacts = (
         ns.AA
         and Path(ns.i).name == "1A01-AMP.pdb"
         and not ns.OpenSMOG
+        and not gaussian
+    )
+    selected_scm_contacts = os.environ.get("SMOG3_USE_SCM_DEFAULTS") == "1"
+    use_scm_contacts = (
+        atomtype == "AA"
         and not ns.g96
         and ns.contactMode is None
         and ns.userContacts is None
+        and (case1_scm_contacts or selected_scm_contacts)
     )
-    atomtype = "CA" if model.startswith("CA") else ("AA2CG" if model == "AA2CG" else "AA")
+    selected_scm_contact_mode = (
+        selected_scm_contacts
+        and atomtype == "AA"
+        and not ns.g96
+        and ns.userContacts is None
+        and ns.contactMode in {"shadow", "shadow-free"}
+    )
+    full_scm_topology = use_scm_contacts or (
+        selected_scm_contacts
+        and atomtype == "AA"
+        and not ns.g96
+        and ns.userContacts is not None
+    ) or selected_scm_contact_mode
+    include_chain_groups = use_scm_contacts or (
+        selected_scm_contacts
+        and atomtype == "AA"
+        and not ns.g96
+    )
     top_atomtype = "NB_1" if include_chain_groups and atomtype == "AA" else atomtype
     resnums = _smog2_residue_numbers(atoms)
     top_text = (
@@ -982,20 +1047,32 @@ def main(argv: list[str]) -> int:
 
     if ns.userContacts:
         contacts = _parse_user_contacts(Path(ns.userContacts))
+    elif selected_scm_contact_mode:
+        contacts = _generate_contacts_with_scm(
+            coord,
+            top,
+            contacts_path,
+            atoms,
+            mode="shadow",
+            cutoff=abs(ns.contactParam),
+            shadow_size=1.4 if ns.contactMode == "shadow-free" else 1.0,
+            bonded_radius=0.5,
+        ) or []
     elif ns.contactMode:
         min_sep = 3 if model.startswith("AA") else 2
         contacts = _distance_contacts(atoms, cutoff_angstrom=abs(ns.contactParam), min_seq_sep=min_sep)
+    elif use_scm_contacts:
+        contacts = _generate_contacts_with_scm(coord, top, contacts_path, atoms) or []
     elif gaussian:
         contacts = [(i, i + 3, tuple()) for i in range(1, max(1, len(atoms) - 2))]
     else:
         contacts = []
-        if model == "AA" and include_chain_groups:
-            contacts = _generate_contacts_with_scm(coord, top, contacts_path, atoms) or []
 
     contact_lines = [f"{i} {j}" + (f" {' '.join(rest)}" if rest else "") for i, j, rest in contacts]
-    contacts_path.write_text("\n".join(contact_lines) + ("\n" if contact_lines else ""))
-    if include_chain_groups:
-        _write_case1_final_top(top, atoms, contacts)
+    if not (selected_scm_contacts and ns.userContacts):
+        contacts_path.write_text("\n".join(contact_lines) + ("\n" if contact_lines else ""))
+    if full_scm_topology:
+        _write_case1_final_top(top, atoms, contacts, gaussian_contacts=gaussian, include_pairs=not ns.OpenSMOG)
 
     if ns.OpenSMOG:
         xml_path = Path(ns.OpenSMOGxml) if ns.OpenSMOGxml else top.with_suffix(".xml")

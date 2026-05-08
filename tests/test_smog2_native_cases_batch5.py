@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -74,8 +82,8 @@ def test_user_contact_and_2cg_cases_use_native_without_perl(monkeypatch, tmp_pat
         assert pdb_res >= 1
         assert f" {atomtype} " in top_text
 
-        ndx_ids = [x for x in ndx.read_text().split() if x.isdigit()]
-        assert len(ndx_ids) == pdb_atoms
+        ndx_atoms = _count_ndx_atoms(ndx)
+        assert ndx_atoms == pdb_atoms
         assert int(gro.read_text().splitlines()[1].strip()) == pdb_atoms
 
         contact_rows = _read_contacts(contacts)

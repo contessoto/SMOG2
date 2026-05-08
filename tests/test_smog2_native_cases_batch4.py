@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -47,7 +55,7 @@ def test_gaussian_batch_cases_use_native_with_explicit_output_options(monkeypatc
 
         top_text = top.read_text()
         gro_lines = gro.read_text().splitlines()
-        ndx_ids = [x for x in ndx.read_text().split() if x.isdigit()]
+        ndx_atoms = _count_ndx_atoms(ndx)
         contact_lines = [ln for ln in contacts.read_text().splitlines() if ln.strip()]
         pdb_atoms = sum(1 for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM")))
 
@@ -55,7 +63,7 @@ def test_gaussian_batch_cases_use_native_with_explicit_output_options(monkeypatc
         assert _count_section(top_text, "atoms") == pdb_atoms
         assert _count_section(top_text, "bonds") == max(0, pdb_atoms - 1)
         assert _count_section(top_text, "molecules") == 1
-        assert len(ndx_ids) == pdb_atoms
+        assert ndx_atoms == pdb_atoms
         assert len(contact_lines) == max(0, pdb_atoms - 3)
 
         assert contacts.name.endswith(".contacts")

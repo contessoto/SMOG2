@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -39,7 +47,7 @@ def test_match_bond_dihe_group_runs_native_without_perl(monkeypatch, tmp_path: P
         top_txt = top.read_text()
         assert "[ atoms ]" in top_txt and "[ bonds ]" in top_txt and "[ molecules ]" in top_txt
         assert int(gro.read_text().splitlines()[1].strip()) == natoms
-        assert len([x for x in ndx.read_text().split() if x.isdigit()]) == natoms
+        assert _count_ndx_atoms(ndx) == natoms
 
         crows = [ln for ln in contacts.read_text().splitlines() if ln.strip()]
         if "-contactMode" in flags:

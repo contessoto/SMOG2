@@ -1,6 +1,14 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -78,7 +86,7 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
         top_text = top.read_text()
         assert "[ atoms ]" in top_text and "[ bonds ]" in top_text and "[ molecules ]" in top_text
         assert int(gro.read_text().splitlines()[1].strip()) == natoms
-        assert len([x for x in ndx.read_text().split() if x.isdigit()]) == natoms
+        assert _count_ndx_atoms(ndx) == natoms
 
         tree = ET.parse(xml)
         root = tree.getroot()

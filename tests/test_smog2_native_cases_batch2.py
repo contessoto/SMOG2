@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 import smog3.cli as cli
 
 
@@ -53,7 +61,7 @@ def test_next_five_direct_cases_use_native_without_perl(monkeypatch, tmp_path: P
         ttxt = top.read_text()
         natoms_top = _count_top_atoms(ttxt)
         natoms_gro = int(gro.read_text().splitlines()[1].strip())
-        natoms_ndx = len([x for x in ndx.read_text().split() if x.isdigit()])
+        natoms_ndx = _count_ndx_atoms(ndx)
 
         for section in ("[ atoms ]", "[ bonds ]", "[ angles ]", "[ dihedrals ]", "[ pairs ]", "[ molecules ]"):
             assert section in ttxt

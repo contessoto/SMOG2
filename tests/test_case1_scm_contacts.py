@@ -170,3 +170,10 @@ def test_case1_parity_script_cleans_outputs_and_prints_diagnostics():
     assert "-keep4SCM" in script
     assert 'wc -l "$BASE_DIR/model.contacts" "$CAND_DIR/model.contacts"' in script
     assert 'exit "$COMPARE_RC"' in script
+
+
+def test_selected_parity_script_uses_official_docker_and_selected_cases():
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "run_selected_two_stage_parity.sh").read_text()
+    assert "smog3.selected_parity" in script
+    assert '--cases "1,21,41,50,56,94"' in script
+    assert "parity_selected.json" in script

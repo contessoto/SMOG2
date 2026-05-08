@@ -1,5 +1,13 @@
 from pathlib import Path
 
+def _count_ndx_atoms(path: Path) -> int:
+    return sum(
+        len(line.split())
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("[")
+    )
+
+
 from smog3.smog2_native import main as smog2_main
 
 
@@ -43,7 +51,7 @@ def test_next_three_direct_cases_run_natively(tmp_path: Path):
         ntx = ndx.read_text()
         natoms_gro = int(gtxt[1].strip())
         natoms_top = _count_top_atoms(ttxt)
-        natoms_ndx = len([x for x in ntx.split() if x.isdigit()])
+        natoms_ndx = _count_ndx_atoms(ndx)
 
         assert "[ defaults ]" in ttxt
         assert "[ atomtypes ]" in ttxt

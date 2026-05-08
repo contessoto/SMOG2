@@ -77,6 +77,8 @@ def _drop_top_header_metadata(lines: list[str]) -> list[str]:
 
 
 def _compare_file(a: Path, b: Path) -> dict:
+    if not a.exists() and not b.exists():
+        return {"match": True, "ignored": "both files absent"}
     if not a.exists() or not b.exists():
         return {"match": False, "reason": "missing file"}
     ta, tb = a.read_text().splitlines(), b.read_text().splitlines()
