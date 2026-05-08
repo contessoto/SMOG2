@@ -109,6 +109,7 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
     assert final_counts["atoms"] == 2702
     assert final_counts["bonds"] == 2766
     assert final_counts["angles"] == 3737
+    assert final_counts["dihedrals"] == 8260
     assert final_counts["pairs"] == len(contact_lines)
     assert final_counts["exclusions"] == len(contact_lines)
 
@@ -125,7 +126,7 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
     assert counts["atoms"] == 2702
     assert counts["bonds"] == 2766
     assert counts["angles"] == 3737
-    assert counts["dihedrals"] > 8000
+    assert counts["dihedrals"] == 8260
     gro4scm = base.with_name("case1.gro4SCM.gro")
     assert gro4scm.exists()
     lines = gro4scm.read_text().splitlines()

@@ -58,6 +58,7 @@ def _ndx_summary(path: Path) -> dict:
 
 def _top_summary(path: Path) -> dict:
     counts = {"atoms": 0, "bonds": 0, "angles": 0, "dihedrals": 0}
+    dihedral_funcs = Counter()
     current = None
     for raw in path.read_text().splitlines() if path.exists() else []:
         s = raw.strip()
@@ -66,7 +67,11 @@ def _top_summary(path: Path) -> dict:
             continue
         if current in counts and s and not s.startswith(";"):
             counts[current] += 1
-    return {"exists": path.exists(), **counts}
+            if current == "dihedrals":
+                parts = s.split()
+                if len(parts) >= 5:
+                    dihedral_funcs[parts[4]] += 1
+    return {"exists": path.exists(), **counts, "dihedral_funcs": dict(sorted(dihedral_funcs.items()))}
 
 
 def _contacts(path: Path) -> set[tuple[str, str, str, str]]:

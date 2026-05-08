@@ -225,9 +225,175 @@ def _bonded_geometry(atoms):
     return sorted(bonds), angles, proper, improper
 
 
+def _template_geometry(path: Path) -> tuple[dict[str, list[tuple[str, str, str, str]]], dict[str, dict[frozenset[str], str]]]:
+    impropers: dict[str, list[tuple[str, str, str, str]]] = {}
+    bond_groups: dict[str, dict[frozenset[str], str]] = {}
+    if not path.exists():
+        return impropers, bond_groups
+
+    root = ET.parse(path).getroot()
+    for residue in root.findall(".//residue"):
+        name = residue.attrib.get("name", "")
+        res_impropers: list[tuple[str, str, str, str]] = []
+        for improper in residue.findall("./impropers/improper"):
+            atoms = tuple(atom.text.strip() for atom in improper.findall("./atom") if atom.text)
+            if len(atoms) == 4:
+                res_impropers.append(atoms)
+        impropers[name] = res_impropers
+
+        groups: dict[frozenset[str], str] = {}
+        for bond in residue.findall("./bonds/bond"):
+            names = tuple(atom.text.strip() for atom in bond.findall("./atom") if atom.text)
+            if len(names) == 2:
+                groups[frozenset(names)] = bond.attrib.get("energyGroup", "")
+        bond_groups[name] = groups
+    return impropers, bond_groups
+
+
+def _residue_groups(atoms):
+    residues: list[dict[str, object]] = []
+    atom_to_residue: dict[int, dict[str, object]] = {}
+    atom_names: dict[int, str] = {}
+    for atom_id, atom in enumerate(atoms, start=1):
+        key = (atom[7], atom[3], atom[2])
+        if not residues or residues[-1]["key"] != key:
+            residues.append({"key": key, "atoms": {}})
+        residue_atoms = residues[-1]["atoms"]
+        assert isinstance(residue_atoms, dict)
+        residue_atoms[atom[1]] = atom_id
+        atom_to_residue[atom_id] = residues[-1]
+        atom_names[atom_id] = atom[1]
+    return residues, atom_to_residue, atom_names
+
+
+def _canonical_dihedral(t: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    return min(t, tuple(reversed(t)))
+
+
+def _distance_nm(atoms, i: int, j: int) -> float:
+    return math.dist(atoms[i - 1][4:7], atoms[j - 1][4:7]) / 10
+
+
+def _angle_degrees(atoms, i: int, j: int, k: int) -> float:
+    a = atoms[i - 1][4:7]
+    b = atoms[j - 1][4:7]
+    c = atoms[k - 1][4:7]
+    ba = (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    bc = (c[0] - b[0], c[1] - b[1], c[2] - b[2])
+    dot = sum(x * y for x, y in zip(ba, bc))
+    n1 = math.sqrt(sum(x * x for x in ba))
+    n2 = math.sqrt(sum(x * x for x in bc))
+    cos_theta = max(-1.0, min(1.0, dot / (n1 * n2)))
+    return math.degrees(math.acos(cos_theta))
+
+
+def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], template: Path | None = None):
+    template_path = template or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_impropers, bond_groups = _template_geometry(template_path)
+    residues, atom_to_residue, atom_names = _residue_groups(atoms)
+
+    improper_keys: set[tuple[int, int, int, int]] = set()
+
+    for residue in residues:
+        resn = residue["key"][2]  # type: ignore[index]
+        residue_atoms = residue["atoms"]
+        assert isinstance(residue_atoms, dict)
+        for spec in template_impropers.get(str(resn), []):
+            try:
+                improper_keys.add(_canonical_dihedral(tuple(residue_atoms[name] for name in spec)))
+            except KeyError:
+                continue
+
+    for idx, residue in enumerate(residues[:-1]):
+        next_residue = residues[idx + 1]
+        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
+            continue
+        left = residue["atoms"]
+        right = next_residue["atoms"]
+        assert isinstance(left, dict)
+        assert isinstance(right, dict)
+        if "C" not in left or "N" not in right:
+            continue
+
+        peptide_specs = [
+            ("CA", "C", "N", "CA"),
+            ("O", "C", "N", "CA"),
+        ]
+        for a0, a1, a2, a3 in peptide_specs:
+            if a0 in left and a1 in left and a2 in right and a3 in right:
+                improper_keys.add(_canonical_dihedral((left[a0], left[a1], right[a2], right[a3])))
+        if "O" in left and "CA" in left:
+            improper_keys.add(_canonical_dihedral((left["O"], left["CA"], left["C"], right["N"])))
+
+        if next_residue["key"][2] == "PRO" and "CD" in right:  # type: ignore[index]
+            for a0, a1, a2, a3 in [("CA", "C", "N", "CD"), ("O", "C", "N", "CD")]:
+                if a0 in left and a1 in left and a2 in right and a3 in right:
+                    improper_keys.add(_canonical_dihedral((left[a0], left[a1], right[a2], right[a3])))
+
+    pro_ring_atoms = {"N", "CA", "CB", "CG", "CD"}
+    purine_ring_atoms = {"N9", "C8", "N7", "C5", "C6", "N1", "C2", "N3", "C4"}
+    for t in proper_dihedrals:
+        j, k = t[1], t[2]
+        res_j = atom_to_residue[j]
+        res_k = atom_to_residue[k]
+        if res_j is not res_k:
+            continue
+        resn = str(res_j["key"][2])  # type: ignore[index]
+        central_group = bond_groups.get(resn, {}).get(frozenset((atom_names[j], atom_names[k])), "")
+        pro_ring = resn == "PRO" and atom_names[j] in pro_ring_atoms and atom_names[k] in pro_ring_atoms
+        amp_base_ring = resn == "AMP" and atom_names[j] in purine_ring_atoms and atom_names[k] in purine_ring_atoms
+        if central_group == "pr_a" or pro_ring or amp_base_ring:
+            improper_keys.add(_canonical_dihedral(t))
+
+    proper_out = [t for t in proper_dihedrals if _canonical_dihedral(t) not in improper_keys]
+    improper_out: list[tuple[int, int, int, int]] = []
+    seen_impropers: set[tuple[int, int, int, int]] = set()
+    for t in proper_dihedrals:
+        key = _canonical_dihedral(t)
+        if key in improper_keys and key not in seen_impropers:
+            improper_out.append(t)
+            seen_impropers.add(key)
+
+    proper_keys = {_canonical_dihedral(t) for t in proper_dihedrals}
+    for residue in residues:
+        resn = residue["key"][2]  # type: ignore[index]
+        residue_atoms = residue["atoms"]
+        assert isinstance(residue_atoms, dict)
+        for spec in template_impropers.get(str(resn), []):
+            try:
+                t = tuple(residue_atoms[name] for name in spec)
+            except KeyError:
+                continue
+            key = _canonical_dihedral(t)
+            if key not in proper_keys and key not in seen_impropers:
+                improper_out.append(t)
+                seen_impropers.add(key)
+
+    for idx, residue in enumerate(residues[:-1]):
+        next_residue = residues[idx + 1]
+        if residue["key"][0] != next_residue["key"][0]:  # type: ignore[index]
+            continue
+        left = residue["atoms"]
+        right = next_residue["atoms"]
+        assert isinstance(left, dict)
+        assert isinstance(right, dict)
+        if "C" not in left or "N" not in right:
+            continue
+        for t in [(left.get("O"), left.get("CA"), left.get("C"), right.get("N"))]:
+            if all(t):
+                tt = tuple(x for x in t if x is not None)
+                key = _canonical_dihedral(tt)
+                if key not in proper_keys and key not in seen_impropers:
+                    improper_out.append(tt)
+                    seen_impropers.add(key)
+
+    return proper_out, improper_out
+
+
 def _write_top4scm(path: Path, atoms):
     resnums = _smog2_residue_numbers(atoms)
-    bonds, angles, proper_dihedrals, improper_dihedrals = _bonded_geometry(atoms)
+    bonds, angles, proper_dihedrals, _improper_dihedrals = _bonded_geometry(atoms)
+    proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, proper_dihedrals)
     lines = [
         '; SMOG3 topology for Java SCM contact generation',
         '',
@@ -251,11 +417,11 @@ def _write_top4scm(path: Path, atoms):
 
     lines.extend(['', '[ bonds ]', ';ai\taj\tfunc'])
     for i, j in bonds:
-        lines.append(f"{i}\t{j}\t1")
+        lines.append(f"{i}\t{j}\t1\t {_distance_nm(atoms, i, j):.9e} 1.000000000e+04")
 
     lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc'])
     for i, j, k in angles:
-        lines.append(f"{i}\t{j}\t{k}\t1")
+        lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
 
     lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc'])
     for i, j, k, l in proper_dihedrals:
@@ -270,7 +436,8 @@ def _write_top4scm(path: Path, atoms):
 
 def _write_case1_final_top(path: Path, atoms, contacts):
     resnums = _smog2_residue_numbers(atoms)
-    bonds, angles, proper_dihedrals, improper_dihedrals = _bonded_geometry(atoms)
+    bonds, angles, proper_dihedrals, _improper_dihedrals = _bonded_geometry(atoms)
+    proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, proper_dihedrals)
     lines = [
         '; SMOG3 case-1 topology generated from native bonded geometry',
         '',
@@ -294,11 +461,11 @@ def _write_case1_final_top(path: Path, atoms, contacts):
 
     lines.extend(['', '[ bonds ]', ';ai\taj\tfunc'])
     for i, j in bonds:
-        lines.append(f"{i}\t{j}\t1")
+        lines.append(f"{i}\t{j}\t1\t {_distance_nm(atoms, i, j):.9e} 1.000000000e+04")
 
     lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc'])
     for i, j, k in angles:
-        lines.append(f"{i}\t{j}\t{k}\t1")
+        lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
 
     lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc'])
     for i, j, k, l in proper_dihedrals:
