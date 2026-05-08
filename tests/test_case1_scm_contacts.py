@@ -96,6 +96,8 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
     assert contact_lines
     assert len(contact_lines) > 3306
     assert "1 53 4 2698" in contact_lines
+    gro_lines = base.with_suffix(".gro").read_text().splitlines()
+    assert gro_lines[26] == "    4LYS     CA   25  -0.914  -1.113   6.559"
 
     final_counts = {}
     current = None
@@ -112,6 +114,16 @@ def test_case1_contact_generation_nonempty_when_scm_jar_available(tmp_path: Path
     assert final_counts["dihedrals"] == 8260
     assert final_counts["pairs"] == len(contact_lines)
     assert final_counts["exclusions"] == len(contact_lines)
+    pair_lines = []
+    current = None
+    for raw in base.with_suffix(".top").read_text().splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            current = s.strip("[] ")
+            continue
+        if current == "pairs" and s and not s.startswith(";"):
+            pair_lines.append(s)
+    assert pair_lines[0] == "1\t1195\t1\t 3.944505603e-02 7.999533051e-04"
 
     top4scm = base.with_name("case1.top4SCM.top")
     counts = {}

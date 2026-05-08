@@ -156,7 +156,7 @@ def _write_gro(path: Path, atoms):
     box = _box_dimensions_nm(atoms)
     lines = ["Gro file for a structure based model, generated with SMOG Version 2.4.5", str(len(atoms))]
     for i, (a, resnum) in enumerate(zip(atoms, resnums), start=1):
-        lines.append(f"{resnum:5d}{a[2]:<5}{a[1]:>5}{i:5d}{_nm_decimal_str(a[4], 3, 8)}{_nm_decimal_str(a[5], 3, 8)}{_nm_decimal_str(a[6], 3, 8)}")
+        lines.append(f"{resnum:5d}{a[2]:<5}{a[1]:>5}{i:5d}{a[4] * 0.10:8.3f}{a[5] * 0.10:8.3f}{a[6] * 0.10:8.3f}")
     lines.append(f"{box[0]:g} {box[1]:g} {box[2]:g}")
     path.write_text("\n".join(lines) + "\n")
 
@@ -250,6 +250,35 @@ def _template_geometry(path: Path) -> tuple[dict[str, list[tuple[str, str, str, 
     return impropers, bond_groups
 
 
+def _template_bond_orientations(path: Path | None = None) -> dict[str, dict[frozenset[str], tuple[str, str]]]:
+    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    out: dict[str, dict[frozenset[str], tuple[str, str]]] = {}
+    if not template_path.exists():
+        return out
+    root = ET.parse(template_path).getroot()
+    for residue in root.findall(".//residue"):
+        name = residue.attrib.get("name", "")
+        orientations: dict[frozenset[str], tuple[str, str]] = {}
+        for bond in residue.findall("./bonds/bond"):
+            names = tuple(atom.text.strip() for atom in bond.findall("./atom") if atom.text)
+            if len(names) == 2:
+                orientations[frozenset(names)] = names
+        out[name] = orientations
+    return out
+
+
+def _zero_atom_count_residues(path: Path | None = None) -> set[str]:
+    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    if not template_path.exists():
+        return set()
+    root = ET.parse(template_path).getroot()
+    return {
+        residue.attrib["name"]
+        for residue in root.findall(".//residue")
+        if residue.attrib.get("atomCount") == "0"
+    }
+
+
 def _residue_groups(atoms):
     residues: list[dict[str, object]] = []
     atom_to_residue: dict[int, dict[str, object]] = {}
@@ -285,6 +314,42 @@ def _angle_degrees(atoms, i: int, j: int, k: int) -> float:
     n2 = math.sqrt(sum(x * x for x in bc))
     cos_theta = max(-1.0, min(1.0, dot / (n1 * n2)))
     return math.degrees(math.acos(cos_theta))
+
+
+def _case1_contact_epsilon(atoms, pair_atoms: list[tuple[int, int]]) -> float:
+    zero_count_residues = _zero_atom_count_residues()
+    normalizable_atoms = sum(1 for atom in atoms if atom[2] not in zero_count_residues)
+    normalizable_contacts = sum(
+        1
+        for i, j in pair_atoms
+        if atoms[i - 1][2] not in zero_count_residues and atoms[j - 1][2] not in zero_count_residues
+    )
+    if normalizable_contacts == 0:
+        return 0.0
+    return (normalizable_atoms * (2.0 / 3.0)) / normalizable_contacts
+
+
+def _contact_1_coefficients(atoms, i: int, j: int, epsilon: float) -> tuple[float, float]:
+    r0 = _distance_nm(atoms, i, j)
+    return 2.0 * epsilon * (r0 ** 6), epsilon * (r0 ** 12)
+
+
+def _case1_ordered_bonds(atoms, bonds: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    _residues, atom_to_residue, atom_names = _residue_groups(atoms)
+    orientations = _template_bond_orientations()
+    out: list[tuple[int, int]] = []
+    for i, j in bonds:
+        left, right = (i, j) if i < j else (j, i)
+        oriented = (left, right)
+        res_left = atom_to_residue[left]
+        res_right = atom_to_residue[right]
+        if res_left is res_right:
+            resn = str(res_left["key"][2])  # type: ignore[index]
+            spec = orientations.get(resn, {}).get(frozenset((atom_names[left], atom_names[right])))
+            if spec == (atom_names[right], atom_names[left]):
+                oriented = (right, left)
+        out.append(oriented)
+    return sorted(out)
 
 
 def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], template: Path | None = None):
@@ -393,6 +458,7 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
 def _write_top4scm(path: Path, atoms):
     resnums = _smog2_residue_numbers(atoms)
     bonds, angles, proper_dihedrals, _improper_dihedrals = _bonded_geometry(atoms)
+    ordered_bonds = _case1_ordered_bonds(atoms, bonds)
     proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, proper_dihedrals)
     lines = [
         '; SMOG3 topology for Java SCM contact generation',
@@ -415,15 +481,15 @@ def _write_top4scm(path: Path, atoms):
     for i, (a, resnum) in enumerate(zip(atoms, resnums), start=1):
         lines.append(f"{i:6d}       NB_1 {resnum:6d} {a[2]:>6} {a[1]:>6} {i:6d}")
 
-    lines.extend(['', '[ bonds ]', ';ai\taj\tfunc'])
-    for i, j in bonds:
+    lines.extend(['', '[ bonds ]', ';ai\taj\tfunc\t r0(nm)\t         Kb'])
+    for i, j in ordered_bonds:
         lines.append(f"{i}\t{j}\t1\t {_distance_nm(atoms, i, j):.9e} 1.000000000e+04")
 
-    lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc'])
+    lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
     for i, j, k in angles:
         lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
 
-    lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc'])
+    lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
     for i, j, k, l in proper_dihedrals:
         lines.append(f"{i}\t{j}\t{k}\t{l}\t1")
         lines.append(f"{i}\t{j}\t{k}\t{l}\t1")
@@ -437,6 +503,7 @@ def _write_top4scm(path: Path, atoms):
 def _write_case1_final_top(path: Path, atoms, contacts):
     resnums = _smog2_residue_numbers(atoms)
     bonds, angles, proper_dihedrals, _improper_dihedrals = _bonded_geometry(atoms)
+    ordered_bonds = _case1_ordered_bonds(atoms, bonds)
     proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, proper_dihedrals)
     lines = [
         '; SMOG3 case-1 topology generated from native bonded geometry',
@@ -459,15 +526,15 @@ def _write_case1_final_top(path: Path, atoms, contacts):
     for i, (a, resnum) in enumerate(zip(atoms, resnums), start=1):
         lines.append(f"{i:6d}       NB_1 {resnum:6d} {a[2]:>6} {a[1]:>6} {i:6d}")
 
-    lines.extend(['', '[ bonds ]', ';ai\taj\tfunc'])
-    for i, j in bonds:
+    lines.extend(['', '[ bonds ]', ';ai\taj\tfunc\t r0(nm)\t         Kb'])
+    for i, j in ordered_bonds:
         lines.append(f"{i}\t{j}\t1\t {_distance_nm(atoms, i, j):.9e} 1.000000000e+04")
 
-    lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc'])
+    lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
     for i, j, k in angles:
         lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
 
-    lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc'])
+    lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
     for i, j, k, l in proper_dihedrals:
         lines.append(f"{i}\t{j}\t{k}\t{l}\t1")
         lines.append(f"{i}\t{j}\t{k}\t{l}\t1")
@@ -475,16 +542,21 @@ def _write_case1_final_top(path: Path, atoms, contacts):
         lines.append(f"{i}\t{j}\t{k}\t{l}\t2")
 
     pair_atoms: list[tuple[int, int]] = []
+    index_by_serial = {atom[0]: idx for idx, atom in enumerate(atoms, start=1)}
     for _chain_i, atom_i, rest in contacts:
         if len(rest) >= 2:
             try:
-                pair_atoms.append((int(atom_i), int(rest[1])))
+                pair_atoms.append((index_by_serial[int(atom_i)], index_by_serial[int(rest[1])]))
             except ValueError:
+                continue
+            except KeyError:
                 continue
 
     lines.extend(['', '[ pairs ]', ';ai\taj\ttype\t A               B'])
+    epsilon = _case1_contact_epsilon(atoms, pair_atoms)
     for i, j in pair_atoms:
-        lines.append(f"{i}\t{j}\t1\t 0.000000000e+00 0.000000000e+00")
+        acoef, bcoef = _contact_1_coefficients(atoms, i, j, epsilon)
+        lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
     lines.extend(['', '[ exclusions ]', ';ai\taj'])
     for i, j in pair_atoms:
