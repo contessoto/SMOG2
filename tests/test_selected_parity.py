@@ -110,3 +110,17 @@ def test_selected_shadow_free_uses_java_scm_parameters(monkeypatch, tmp_path: Pa
     assert seen["mode"] == "shadow"
     assert seen["cutoff"] == 5.0
     assert seen["shadow_size"] == 1.4
+
+
+def test_opensmog_xml_writer_emits_smog2_contact_force_shape(tmp_path: Path):
+    atoms = [
+        (1, "CA", "ALA", 1, 0.0, 0.0, 0.0, "A:1"),
+        (2, "CB", "ALA", 1, 10.0, 0.0, 0.0, "A:1"),
+    ]
+    out = tmp_path / "model.xml"
+    smog2_native._write_opensmog_xml(out, atoms, [(1, 1, ("1", "2"))], "AA")
+    text = out.read_text()
+    assert "<OpenSMOGforces>" in text
+    assert '<contacts_type name="contact_1-6-12">' in text
+    assert '<expression expr="A/r^12-B/r^6"/>' in text
+    assert '<interaction i="1" j="2" A="' in text

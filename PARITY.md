@@ -142,6 +142,10 @@ For `model.top`, the comparator ignores only the free-form header metadata
 before the first topology section. Section contents, ordering, and numerical
 values remain strict.
 
+For `model.xml`, the comparator similarly ignores only the generated XML
+comment block before the `<OpenSMOGforces>` root element. All OpenSMOG force
+elements, interaction ordering, and parameter values remain strict.
+
 You can also run comparator directly:
 
 ```bash

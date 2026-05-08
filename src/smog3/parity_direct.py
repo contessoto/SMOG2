@@ -76,6 +76,13 @@ def _drop_top_header_metadata(lines: list[str]) -> list[str]:
     return lines
 
 
+def _drop_xml_header_metadata(lines: list[str]) -> list[str]:
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("<OpenSMOGforces"):
+            return lines[idx:]
+    return lines
+
+
 def _compare_file(a: Path, b: Path) -> dict:
     if not a.exists() and not b.exists():
         return {"match": True, "ignored": "both files absent"}
@@ -86,6 +93,8 @@ def _compare_file(a: Path, b: Path) -> dict:
         return {"match": True}
     if a.name == "model.top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
         return {"match": True, "ignored": "topology header metadata before first section"}
+    if a.name == "model.xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
+        return {"match": True, "ignored": "OpenSMOG XML generated comment metadata before root element"}
     diff = "\n".join(difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2))
     return {"match": False, "diff": diff[:4000]}
 

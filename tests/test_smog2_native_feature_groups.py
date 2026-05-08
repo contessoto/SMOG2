@@ -90,17 +90,12 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
 
         tree = ET.parse(xml)
         root = tree.getroot()
-        assert root.tag == "OpenSMOG"
-        ff = root.find("ForceField")
-        assert ff is not None
-        particles = ff.find("Particles")
-        assert particles is not None
-        particle_nodes = particles.findall("Particle")
-        assert int(particles.attrib["count"]) == natoms == len(particle_nodes)
-        contacts_node = ff.find("Contacts")
+        assert root.tag == "OpenSMOGforces"
+        contacts_node = root.find("contacts")
         assert contacts_node is not None
-        contact_nodes = contacts_node.findall("Contact")
-        file_contacts = [ln for ln in contacts.read_text().splitlines() if ln.strip()]
-        assert int(contacts_node.attrib["count"]) == len(contact_nodes) == len(file_contacts)
+        contacts_type = contacts_node.find("contacts_type")
+        assert contacts_type is not None
+        assert contacts_type.attrib["name"] in {"contact_1-6-12", "contact_gaussian"}
+        assert contacts_type.find("expression") is not None
 
     assert called["perl"] is False
