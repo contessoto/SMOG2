@@ -25,6 +25,32 @@ This README provides the absolute basics for using
 SMOG 2.  For more advanced usage information, consult
 the manual and tutorials, available at smog-server.org
 
+SMOG3 STATUS IN THIS REPOSITORY
+
+This branch also contains SMOG3, a Python-native successor
+implementation under src/smog3.  Normal SMOG3 runtime does
+not invoke Perl.  Java is used where needed for the existing
+SCM contact-generation workflow.
+
+The current SMOG-CHECK-style two-stage parity campaign runs
+original SMOG2 only inside the official smogserver/smog2:stable
+Docker image and runs SMOG3 locally with Python plus Java.  The
+latest verified result is 110 passing runnable baseline cases,
+0 SMOG3 failures, 0 unsupported cases, and 5 BASELINE_ERROR
+cases where the official SMOG2 Docker image cannot generate
+complete baseline outputs for the current repository templates.
+Those baseline errors are cases 104, 110, 111, 112, and 113.
+
+Useful SMOG3 verification commands:
+
+>PYTHONPATH=src pytest -q tests
+>bash scripts/run_selected_two_stage_parity.sh
+>bash scripts/run_all_smogcheck_two_stage_parity.sh --all
+
+Generated parity reports and output directories are local
+artifacts and should not be committed.  See PARITY.md for the
+full status table, comparator policy, and baseline-error notes.
+
 We encourage everyone to provide feedback/suggestions
 on usage, extensions and bugs to info@smog-server.org,
 or post questions to the users forum.  You can sign up

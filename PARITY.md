@@ -153,13 +153,63 @@ For `model.xml`, the comparator similarly ignores only the generated XML
 comment block before the `<OpenSMOGforces>` root element. All OpenSMOG force
 elements, interaction ordering, and parameter values remain strict.
 
-Current official-image caveat: `smogserver/smog2:stable` reports SMOG v2.4.5
-and cannot generate baselines for SMOG-CHECK cases 104 and 110-113 from this
-repo's current testlist/templates. The image lacks the newer custom/pcos/ncos
-dihedral function support needed by those templates, and `-warn -1` still exits
-before complete baseline outputs are written. The parity runner leaves those
-as `BASELINE_ERROR`; it does not mark them as passing or compare them against
-candidate files.
+## Current SMOG-CHECK parity status
+
+Latest verified campaign:
+
+| Result | Count |
+| --- | ---: |
+| Total direct SMOG-CHECK cases | 115 |
+| PASS | 110 |
+| FAIL | 0 |
+| UNSUPPORTED | 0 |
+| BASELINE_ERROR | 5 |
+| CANDIDATE_ERROR | 0 |
+
+SMOG3 normal runtime uses zero Perl. Original SMOG2 is run only inside the
+official `smogserver/smog2:stable` Docker image to generate baseline outputs.
+SMOG3 uses Python plus Java where needed for SCM contact generation.
+
+The five `BASELINE_ERROR` cases are not counted as SMOG3 failures. In each
+case, the official Docker image reports SMOG v2.4.5 and exits before complete
+baseline outputs are written. `-warn -1` was also checked and still did not
+produce complete baseline files.
+
+| Case | SMOG-CHECK entry | Baseline command options | Official-image baseline failure | Later validation needs |
+| ---: | --- | --- | --- | --- |
+| 104 | `1F4N_v2 OpenSMOG AA-CCD default` | `-OpenSMOG -OpenSMOGxml model.xml -t SMOG-CHECK/share/templates/SBM_AA+customContacts+customDihedrals` | SIF schema validation rejects `OpenSMOGtype="dihedral"` before output files are complete. | A SMOG2 baseline image/release that supports the current custom dihedral OpenSMOG template schema. |
+| 110 | `RNA+protein AA-DIHE default` | `-t SMOG-CHECK/share/templates/SBM_AA_DIHE` | SMOG v2.4.5 rejects `dihedral_ncos`/`dihedral_pcos` template functions as unsupported. | A SMOG2 baseline image/release with pcos/ncos dihedral support. |
+| 111 | `RNA+protein OpenSMOG AA-DIHE default` | `-OpenSMOG -OpenSMOGxml model.xml -t SMOG-CHECK/share/templates/SBM_AA_DIHE` | SMOG v2.4.5 rejects `dihedral_ncos`/`dihedral_pcos` before complete topology/XML output. | A SMOG2 baseline image/release with pcos/ncos dihedral and OpenSMOG support for these templates. |
+| 112 | `RNA+protein AA-DIHE4 default` | `-t SMOG-CHECK/share/templates/SBM_AA_DIHE4` | SMOG v2.4.5 rejects `dihedral_pcos4`/`dihedral_ncos4` template functions as unsupported. | A SMOG2 baseline image/release with pcos4/ncos4 dihedral support. |
+| 113 | `RNA+protein OpenSMOG AA-DIHE4 default` | `-OpenSMOG -OpenSMOGxml model.xml -t SMOG-CHECK/share/templates/SBM_AA_DIHE4` | SMOG v2.4.5 rejects `dihedral_ncos4`/`dihedral_pcos4` before complete topology/XML output. | A SMOG2 baseline image/release with pcos4/ncos4 dihedral and OpenSMOG support for these templates. |
+
+## User commands
+
+Run the Python test suite:
+
+```bash
+PYTHONPATH=src pytest -q tests
+```
+
+Run the selected representative parity set:
+
+```bash
+bash scripts/run_selected_two_stage_parity.sh
+```
+
+Run the full SMOG-CHECK-style parity campaign:
+
+```bash
+bash scripts/run_all_smogcheck_two_stage_parity.sh --all
+```
+
+Inspect generated reports:
+
+```bash
+cat parity_selected.json
+cat parity_all_summary.json
+ls parity_runs/all/reports
+```
 
 You can also run comparator directly:
 

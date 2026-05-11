@@ -1,0 +1,8 @@
+/.pytest_cache/
+/parity_all_summary.json
+/parity_case1.json
+/parity_runs/
+/parity_selected.json
+/table.xvg
+__pycache__/
+*.py[cod]
