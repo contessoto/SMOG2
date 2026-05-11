@@ -4,8 +4,12 @@
 /parity_runs/
 /parity_selected.json
 /real_pdb_validation/
+/installed_smog3_verify/
 /smogcheck_dropin_runs/
 /table.xvg
+/validation/tutorials/runs/
+/validation/tutorials/*_summary.json
+/validation/tutorials/*_summary.md
 /baseline_case1/
 /build/
 /dist/

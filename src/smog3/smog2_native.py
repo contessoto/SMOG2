@@ -2531,6 +2531,20 @@ def _generate_ca_contacts_with_scm(
     _write_gro4scm(scm_gro, ca_atoms)
     return contacts
 
+SMOG3_USAGE = """Python-native smog3 usage:
+  smog3 -i input.pdb <model-flag> -o model.top -g model.gro -n model.ndx -s model.contacts
+
+Supported model flags:
+  -AA -CA -AA2cg -AAgaussian -CAgaussian -AACC1 -AACCD -AADIHE -AADIHE4
+  -AAMATCH -AABOND -CABOND
+
+Common generation options:
+  -OpenSMOG -OpenSMOGxml model.xml
+  -c contacts.dat / -userContacts contacts.dat
+  -g96
+"""
+
+
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-i", required=False)
@@ -2604,10 +2618,10 @@ def main(argv: list[str]) -> int:
         model = "CA"
 
     if ns.help:
-        print("Python-native smog3 usage: smog3 -i <pdb> with supported model flags (-AA/-CA/-AA2cg/-AAgaussian/-CAgaussian/-AACC1/-AACCD/-AADIHE/-AADIHE4)")
+        print(SMOG3_USAGE.rstrip())
         return 0
     if not ns.i or not model:
-        print("Python-native smog2 usage: -i <pdb> with supported model flags (-AA/-CA/-AA2cg/-AAgaussian/-CAgaussian/-AACC1/-AACCD/-AADIHE/-AADIHE4)")
+        print(SMOG3_USAGE.rstrip())
         return 2
     if extra:
         print("Unsupported smog2 options for native runtime: " + " ".join(extra))

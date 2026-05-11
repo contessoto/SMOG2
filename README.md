@@ -96,8 +96,18 @@ bash scripts/validate_real_pdb_panel.sh
 bash scripts/validate_real_pdb_panel.sh --use-installed-smog3
 ```
 
+Public SMOG tutorial/model-generation validation:
+
+```bash
+bash scripts/run_tutorial_validation.sh --list
+bash scripts/run_tutorial_validation.sh --all
+bash scripts/run_tutorial_validation.sh --case standard_aa_ci2
+bash scripts/run_tutorial_validation.sh --all --use-installed-smog3
+```
+
 The validation outputs are written to ignored local directories such as
-`parity_runs/`, `smogcheck_dropin_runs/`, and `real_pdb_validation/`.
+`parity_runs/`, `smogcheck_dropin_runs/`, `real_pdb_validation/`, and
+`validation/tutorials/runs/`.
 
 ## Repository Layout
 

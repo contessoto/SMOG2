@@ -13,3 +13,5 @@
   outputs with local SMOG3 candidate outputs.
 - Added real-PDB panel validation helpers for comparing TestPyPI-installed or
   source-checkout SMOG3 against official SMOG2 Docker.
+- Added public SMOG tutorial/model-generation validation helpers with a manifest
+  for implemented, missing-input, and simulation-only tutorial categories.
