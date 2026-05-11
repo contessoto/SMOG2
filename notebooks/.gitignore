@@ -1,0 +1,8 @@
+2CI2.pdb
+notebook_*.top
+notebook_*.gro
+notebook_*.ndx
+notebook_*.contacts
+notebook_*.gro4SCM.gro
+notebook_*.top4SCM.top
+notebook.xml

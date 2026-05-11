@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use SMOG3, please cite SMOG3 and the original SMOG2/SMOG model references."
+title: "SMOG3"
+version: "0.1.0a1"
+date-released: "2026-05-11"
+authors:
+  - family-names: "SMOG development team"
+license: "GPL-2.0-or-later"
+repository-code: "https://github.com/smog-server/SMOG2"
+url: "https://smog-server.org/"
+abstract: "Python-native successor runtime for SMOG2 structure-based model generation with Java SCM contact generation where needed."
+references:
+  - type: article
+    title: "SMOG 2: A versatile software package for generating structure-based models"
+    authors:
+      - family-names: "Noel"
+        given-names: "Jeffrey K."
+      - family-names: "Whitford"
+        given-names: "Paul C."
+      - family-names: "Onuchic"
+        given-names: "Jose N."
+    journal: "PLOS Computational Biology"
+    year: 2016
+  - type: article
+    title: "All-atom structure-based potential for proteins: Bridging minimal models with all-atom empirical forcefields"
+    authors:
+      - family-names: "Whitford"
+        given-names: "Paul C."
+    journal: "Proteins"
+    year: 2009
