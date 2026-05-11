@@ -1,6 +1,26 @@
 from pathlib import Path
+import re
 
+from smog3 import smog2_native
 from smog3 import smogcheck_dropin_smog2 as dropin
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _top_section_rows(text: str, section: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    in_section = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == f"[ {section} ]":
+            in_section = True
+            continue
+        if in_section and stripped.startswith("["):
+            break
+        if in_section and stripped and not stripped.startswith(";"):
+            rows.append(stripped.split())
+    return rows
 
 
 def test_dropin_translates_template_and_scm_harness_flags() -> None:
@@ -153,3 +173,76 @@ def test_dropin_main_forces_no_perl_fallback_and_writes_shadow_output(tmp_path, 
 
     assert rc == 0
     assert contacts.with_suffix(".contacts.ShadowOutput").read_text(encoding="utf-8") == "1 2 1 5\n"
+
+
+def test_dropin_opensmog_v27_moves_custom_dihedrals_to_xml(tmp_path: Path) -> None:
+    pdb = ROOT / "SMOG-CHECK" / "share" / "PDB.files" / "1F4N_v2.pdb"
+    template = ROOT / "SMOG-CHECK" / "share" / "templates" / "SBM_AA+customContacts+customDihedrals" / "AA+customContacts+customDihedrals.bif"
+    nb = template.with_suffix(".nb")
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    contacts = [(1, 47, tuple())]
+
+    all_top = tmp_path / "all.top"
+    dropin_top = tmp_path / "dropin.top"
+    xml = tmp_path / "model.xml"
+    smog2_native._write_case1_final_top(
+        all_top,
+        atoms,
+        contacts,
+        include_pairs=False,
+        include_exclusions=False,
+        template_path=template,
+        nb_path=nb,
+    )
+    smog2_native._write_case1_final_top(
+        dropin_top,
+        atoms,
+        contacts,
+        include_pairs=False,
+        include_exclusions=False,
+        template_path=template,
+        nb_path=nb,
+        omit_proper_energy_groups={"sc_a"},
+    )
+    smog2_native._write_opensmog_xml(
+        xml,
+        atoms,
+        contacts,
+        "AA-CCD",
+        template_path=template,
+        nb_path=nb,
+        generate_pair_exclusions=True,
+    )
+
+    all_func1 = sum(1 for row in _top_section_rows(all_top.read_text(encoding="utf-8"), "dihedrals") if row[4] == "1")
+    dropin_func1 = sum(1 for row in _top_section_rows(dropin_top.read_text(encoding="utf-8"), "dihedrals") if row[4] == "1")
+    custom_count = len(smog2_native._opensmog_custom_dihedral_items(atoms, template))
+    assert all_func1 - dropin_func1 == 2 * custom_count
+    assert "[ exclusions ]" not in dropin_top.read_text(encoding="utf-8")
+
+    xml_text = xml.read_text(encoding="utf-8")
+    assert '<exclusions generate="1"/>' in xml_text
+    assert '<dihedrals_type name="dihedral_custom1">' in xml_text
+    first_custom = re.search(r'<interaction i="[^"]+" j="[^"]+" k="[^"]+" l="[^"]+" theta0="([^"]+)" weight="([^"]+)" multiplicity="([^"]+)"/>', xml_text)
+    assert first_custom is not None
+    assert float(first_custom.group(2)) > 0.0
+
+
+def test_dropin_dihe_defaults_and_type4_writer(tmp_path: Path) -> None:
+    pdb = ROOT / "SMOG-CHECK" / "share" / "PDB.files" / "2ci2_v2.pdb"
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    top = tmp_path / "dihe4.top"
+
+    smog2_native._write_case1_final_top(
+        top,
+        atoms,
+        [(1, 20, tuple())],
+        defaults_line="  1      1         no",
+        proper_dihedral_func=4,
+    )
+
+    defaults = _top_section_rows(top.read_text(encoding="utf-8"), "defaults")
+    dihedrals = _top_section_rows(top.read_text(encoding="utf-8"), "dihedrals")
+    assert len(defaults[0]) == 3
+    assert any(row[4] == "4" for row in dihedrals)
+    assert all(row[4] != "1" for row in dihedrals)

@@ -455,6 +455,41 @@ def _opensmog_contact_arg_value(arg: str, r0: float, epsilon: float) -> str:
     return f"{float(value):7.5e}"
 
 
+def _opensmog_custom_dihedral_items(atoms, template_path: Path) -> list[tuple[int, int, int, int, float, float]]:
+    _bonds, _angles, graph_dihedrals, _improper_dihedrals = _bonded_geometry(atoms, template_path=template_path)
+    proper_dihedrals, _improper_dihedrals = _case1_dihedrals(atoms, graph_dihedrals, template_path)
+    _template_impropers, bond_groups = _template_geometry(template_path)
+    _residues, atom_to_residue, atom_names = _residue_groups(atoms)
+    residue_types = _template_residue_types(template_path)
+    central_counts = _case1_dihedral_count_by_central(
+        atoms, graph_dihedrals, atom_to_residue, atom_names, bond_groups, residue_types
+    )
+    normalization_base = _case1_dihedral_normalization_base(
+        atoms,
+        central_counts,
+        template_path=template_path,
+    )
+
+    items = []
+    for t in proper_dihedrals:
+        _i, j, k, _l = t
+        if _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k) != "sc_a":
+            continue
+        raw_radians = math.radians(_dihedral_degrees(atoms, *t))
+        weight = _case1_proper_dihedral_weight(
+            t,
+            atoms,
+            atom_to_residue,
+            atom_names,
+            bond_groups,
+            residue_types,
+            central_counts,
+            normalization_base,
+        )
+        items.append((*t, raw_radians, weight))
+    return items
+
+
 def _write_opensmog_xml(
     path: Path,
     atoms,
@@ -464,6 +499,7 @@ def _write_opensmog_xml(
     gaussian_contacts: bool = False,
     template_path: Path | None = None,
     nb_path: Path | None = None,
+    generate_pair_exclusions: bool = False,
 ):
     if model == "CA":
         pair_items = [(i, j, None) for i, j in _ca_contact_pair_items(atoms, contacts)]
@@ -524,6 +560,8 @@ def _write_opensmog_xml(
         ])
         for parameter in parameters:
             lines.append(f"   <parameter>{parameter}</parameter>")
+        if generate_pair_exclusions:
+            lines.append('   <exclusions generate="1"/>')
         for i, j, r0_override in normal_pair_items:
             r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
             attrs = " ".join(
@@ -540,6 +578,8 @@ def _write_opensmog_xml(
             "   <parameter>sigmaG</parameter>",
             "   <parameter>a</parameter>",
         ])
+        if generate_pair_exclusions:
+            lines.append('   <exclusions generate="1"/>')
         for i, j, r0_override in normal_pair_items:
             r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
             if model == "CA":
@@ -568,6 +608,8 @@ def _write_opensmog_xml(
                 "   <parameter>A</parameter>",
                 "   <parameter>B</parameter>",
             ])
+        if generate_pair_exclusions:
+            lines.append('   <exclusions generate="1"/>')
         for i, j, r0_override in normal_pair_items:
             r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
             if model == "CA":
@@ -580,8 +622,29 @@ def _write_opensmog_xml(
     lines.extend([
         "  </contacts_type>",
         " </contacts>",
-        "</OpenSMOGforces>",
     ])
+    if model == "AA-CCD" and template_path is not None:
+        custom_dihedrals = _opensmog_custom_dihedral_items(atoms, template_path)
+        if custom_dihedrals:
+            lines.extend([
+                " <dihedrals>",
+                '  <dihedrals_type name="dihedral_custom1">',
+                '   <expression expr="weight*(1-(cos(multiplicity*(theta-theta0))^2))"/>',
+                "   <parameter>theta0</parameter>",
+                "   <parameter>weight</parameter>",
+                "   <parameter>multiplicity</parameter>",
+            ])
+            for i, j, k, l, raw_radians, weight in custom_dihedrals:
+                theta0 = (raw_radians + 0.2) / 1.05
+                lines.append(
+                    f'   <interaction i="{i}" j="{j}" k="{k}" l="{l}" '
+                    f'theta0="{theta0:.9e}" weight="{weight:.9e}" multiplicity="{math.sin(raw_radians):.9e}"/>'
+                )
+            lines.extend([
+                "  </dihedrals_type>",
+                " </dihedrals>",
+            ])
+    lines.append("</OpenSMOGforces>")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -1639,6 +1702,7 @@ def _write_ca_final_top(
     atomtype_c12: float = 1.67772e-05,
     defaults_line: str = "  1      1         no        1       1",
     dihedral_strength: float = 1.0,
+    include_exclusions: bool = True,
 ):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
@@ -1689,9 +1753,10 @@ def _write_ca_final_top(
                 bcoef = 5.0 * (r0 ** 12)
                 lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
-    lines.extend(['', '[ exclusions ]', ';ai\taj'])
-    for i, j in pair_atoms:
-        lines.append(f"{i}\t{j}")
+    if include_exclusions:
+        lines.extend(['', '[ exclusions ]', ';ai\taj'])
+        for i, j in pair_atoms:
+            lines.append(f"{i}\t{j}")
 
     lines.extend(['', '[ system ]', '; name', '  Macromolecule', '', '[ molecules ]', '; name            #molec', '  Macromolecule   1'])
     path.write_text("\n".join(lines) + "\n")
@@ -1718,7 +1783,14 @@ def _shadow_free_contact_pairs(atoms, contacts) -> tuple[list[tuple[int, int, fl
     return filtered, normalizable_count
 
 
-def _write_shadow_free_final_top(path: Path, atoms, contacts, *, include_pairs: bool = True):
+def _write_shadow_free_final_top(
+    path: Path,
+    atoms,
+    contacts,
+    *,
+    include_pairs: bool = True,
+    include_exclusions: bool = True,
+):
     template_path = _shadow_free_template_path()
     attrs = _shadow_free_atom_attrs(atoms)
     resnums = _smog2_residue_numbers(atoms)
@@ -1865,9 +1937,10 @@ def _write_shadow_free_final_top(path: Path, atoms, contacts, *, include_pairs: 
             bcoef = epsilon * (r0 ** 12)
             lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
-    lines.extend(['', '[ exclusions ]', ';ai\taj'])
-    for i, j, _r0 in pair_items:
-        lines.append(f"{i}\t{j}")
+    if include_exclusions:
+        lines.extend(['', '[ exclusions ]', ';ai\taj'])
+        for i, j, _r0 in pair_items:
+            lines.append(f"{i}\t{j}")
 
     lines.extend(['', '[ system ]', '; name', '  Macromolecule', '', '[ molecules ]', '; name            #molec', '  Macromolecule   1'])
     path.write_text("\n".join(lines) + "\n")
@@ -1897,6 +1970,9 @@ def _write_case1_final_top(
     atomtypes_lines: list[str] | None = None,
     pair_mode: str = "coefficients",
     gaussian_sigma_denominator: float = 34.6574,
+    include_exclusions: bool = True,
+    proper_dihedral_func: int = 1,
+    omit_proper_energy_groups: set[str] | None = None,
 ):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
@@ -1991,9 +2067,21 @@ def _write_case1_final_top(
         lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
 
     lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
+    omit_context = None
+    if omit_proper_energy_groups:
+        _template_impropers, omit_bond_groups = _template_geometry(template_path)
+        _residues, omit_atom_to_residue, omit_atom_names = _residue_groups(atoms)
+        omit_residue_types = _template_residue_types(template_path)
+        omit_context = (omit_bond_groups, omit_atom_to_residue, omit_atom_names, omit_residue_types)
     for i, j, k, l, func, phi0, weight, mult in dihedral_rows:
         if func == 1:
-            lines.append(f"{i}\t{j}\t{k}\t{l}\t1\t {phi0:.9e} {weight:.9e} {mult}")
+            if omit_context is not None:
+                omit_bond_groups, omit_atom_to_residue, omit_atom_names, omit_residue_types = omit_context
+                if _case1_energy_group(
+                    atoms, omit_atom_to_residue, omit_atom_names, omit_bond_groups, omit_residue_types, j, k
+                ) in omit_proper_energy_groups:
+                    continue
+            lines.append(f"{i}\t{j}\t{k}\t{l}\t{proper_dihedral_func}\t {phi0:.9e} {weight:.9e} {mult}")
         else:
             lines.append(f"{i}\t{j}\t{k}\t{l}\t2\t {phi0:.9e} {weight:.9e}")
 
@@ -2034,9 +2122,10 @@ def _write_case1_final_top(
                     bcoef = epsilon * (r0 ** 12)
                     lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
-    lines.extend(['', '[ exclusions ]', ';ai\taj'])
-    for i, j in pair_atoms:
-        lines.append(f"{i}\t{j}")
+    if include_exclusions:
+        lines.extend(['', '[ exclusions ]', ';ai\taj'])
+        for i, j in pair_atoms:
+            lines.append(f"{i}\t{j}")
 
     lines.extend(['', '[ system ]', '; name', '  Macromolecule', '', '[ molecules ]', '; name            #molec', '  Macromolecule   1'])
     path.write_text("\n".join(lines) + "\n")
@@ -2559,6 +2648,7 @@ def main(argv: list[str]) -> int:
         and not gaussian
     )
     selected_scm_contacts = os.environ.get("SMOG3_USE_SCM_DEFAULTS") == "1"
+    dropin_opensmog_v27 = ns.OpenSMOG and os.environ.get("SMOG3_DROPIN_OPENSMOG_V27") == "1"
     use_scm_contacts = (
         atomtype in {"AA", "AA2CG"}
         and not ns.g96
@@ -2726,7 +2816,13 @@ def main(argv: list[str]) -> int:
             include_pairs=not ns.OpenSMOG,
         )
     elif shadow_free_topology:
-        _write_shadow_free_final_top(top, atoms, contacts, include_pairs=not ns.OpenSMOG)
+        _write_shadow_free_final_top(
+            top,
+            atoms,
+            contacts,
+            include_pairs=not ns.OpenSMOG,
+            include_exclusions=not dropin_opensmog_v27,
+        )
     elif full_scm_topology:
         template_path = (
             aa2cg_template if model == "AA2CG"
@@ -2747,6 +2843,7 @@ def main(argv: list[str]) -> int:
             contacts,
             gaussian_contacts=gaussian,
             include_pairs=not ns.OpenSMOG,
+            include_exclusions=not dropin_opensmog_v27,
             extra_bonds=aa_extra_bonds,
             template_path=template_path,
             nb_path=nb_path,
@@ -2757,11 +2854,13 @@ def main(argv: list[str]) -> int:
             count_dihedrals=bool(ns.dihedralCounting),
             strict_template_bonds=use_testing_template,
             contact_stack_scale=ns.contactStackScale or 1.0,
-            defaults_line="  1      2         no" if model == "AA-nb-cr2" else ("  1      1         no" if use_testing_template or model in {"AA2CG", "AA-BOND"} else "  1      1         no        1       1"),
+            defaults_line="  1      2         no" if model == "AA-nb-cr2" else ("  1      1         no" if use_testing_template or model in {"AA2CG", "AA-BOND", "AA-DIHE", "AA-DIHE4"} else "  1      1         no        1       1"),
             atomtypes_header="; name  mass     charge    ptype  sigma   epsilon" if model == "AA-nb-cr2" else "; name  mass     charge    ptype c6            c12",
             atomtypes_lines=[f" NB_1   1.0000   0.000000  A     {-0.25 / (2 ** (1 / 6)):.5e}  1.00000e-01  "] if model == "AA-nb-cr2" else None,
             pair_mode="sigma_epsilon" if model == "AA-nb-cr2" else "coefficients",
             gaussian_sigma_denominator=34.66 if use_testing_template else 34.6574,
+            proper_dihedral_func=4 if model == "AA-DIHE4" else 1,
+            omit_proper_energy_groups={"sc_a"} if model == "AA-CCD" and ns.OpenSMOG else None,
         )
     elif full_ca_topology:
         ca_testing_template = ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}
@@ -2771,6 +2870,7 @@ def main(argv: list[str]) -> int:
             contacts,
             gaussian_contacts=gaussian,
             include_pairs=not ns.OpenSMOG,
+            include_exclusions=not dropin_opensmog_v27,
             extra_bonds=ca_extra_bonds,
             atom_type_name="Y" if ca_testing_template else "NB_1",
             atomtype_c12=(0.5**12) if ca_testing_template else 1.67772e-05,
@@ -2805,6 +2905,7 @@ def main(argv: list[str]) -> int:
             gaussian_contacts=gaussian,
             template_path=xml_template_path,
             nb_path=xml_nb_path,
+            generate_pair_exclusions=dropin_opensmog_v27,
         )
 
     print(f"\nYour Structure-based Model is ready!\n\nFiles generated:\n\t{top}\n\t{coord}\n\t{ndx}\n\t{contacts_path}\n")
