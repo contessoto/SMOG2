@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -83,6 +85,100 @@ def _drop_xml_header_metadata(lines: list[str]) -> list[str]:
     return lines
 
 
+_TOP_FLOAT_SECTIONS = {"atomtypes", "bonds", "angles", "dihedrals", "pairs"}
+_TOP_FLOAT_ABS_TOL = 5e-10
+_TOP_FLOAT_REL_TOL = 5e-9
+
+
+def _top_section(line: str) -> str | None:
+    m = re.match(r"\s*\[\s*([^\]]+?)\s*\]", line)
+    return m.group(1).strip().lower() if m else None
+
+
+def _float_like(token: str) -> bool:
+    return any(ch in token for ch in ".eE") and _as_float(token) is not None
+
+
+def _as_float(token: str) -> float | None:
+    try:
+        value = float(token)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _split_top_data_comment(line: str) -> tuple[str, str]:
+    idx = line.find(";")
+    if idx < 0:
+        return line, ""
+    return line[:idx], line[idx:]
+
+
+def _top_tokens_with_layout(data: str) -> tuple[list[tuple[str, str]], str]:
+    out: list[tuple[str, str]] = []
+    pos = 0
+    for match in re.finditer(r"\S+", data):
+        out.append((data[pos : match.start()], match.group(0)))
+        pos = match.end()
+    return out, data[pos:]
+
+
+def _same_top_line_with_float_ulp(a: str, b: str, section: str | None) -> bool:
+    if a == b:
+        return True
+    if section not in _TOP_FLOAT_SECTIONS:
+        return False
+    a_data, a_comment = _split_top_data_comment(a)
+    b_data, b_comment = _split_top_data_comment(b)
+    if a_comment != b_comment:
+        return False
+    a_tokens, a_trailing = _top_tokens_with_layout(a_data)
+    b_tokens, b_trailing = _top_tokens_with_layout(b_data)
+    if a_trailing != b_trailing or len(a_tokens) != len(b_tokens):
+        return False
+    for token_idx, ((a_sep, a_tok), (b_sep, b_tok)) in enumerate(zip(a_tokens, b_tokens)):
+        if a_sep != b_sep:
+            return False
+        if a_tok == b_tok:
+            continue
+        if not (_float_like(a_tok) and _float_like(b_tok)):
+            return False
+        a_float = _as_float(a_tok)
+        b_float = _as_float(b_tok)
+        if a_float is None or b_float is None:
+            return False
+        if (
+            section == "dihedrals"
+            and token_idx == 5
+            and abs(abs(a_float) - 180.0) <= _TOP_FLOAT_ABS_TOL
+            and abs(abs(b_float) - 180.0) <= _TOP_FLOAT_ABS_TOL
+        ):
+            continue
+        limit = max(_TOP_FLOAT_ABS_TOL, _TOP_FLOAT_REL_TOL * max(abs(a_float), abs(b_float), 1.0))
+        if abs(a_float - b_float) > limit:
+            return False
+    return True
+
+
+def _top_matches_with_float_ulp(a_lines: list[str], b_lines: list[str]) -> bool:
+    a_body = _drop_top_header_metadata(a_lines)
+    b_body = _drop_top_header_metadata(b_lines)
+    if len(a_body) != len(b_body):
+        return False
+    section: str | None = None
+    for a_line, b_line in zip(a_body, b_body):
+        a_section = _top_section(a_line)
+        b_section = _top_section(b_line)
+        if a_section or b_section:
+            if a_section != b_section:
+                return False
+            section = a_section
+            continue
+        if not _same_top_line_with_float_ulp(a_line, b_line, section):
+            return False
+    return True
+
+
 def _compare_file(a: Path, b: Path) -> dict:
     if not a.exists() and not b.exists():
         return {"match": True, "ignored": "both files absent"}
@@ -93,6 +189,11 @@ def _compare_file(a: Path, b: Path) -> dict:
         return {"match": True}
     if a.name == "model.top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
         return {"match": True, "ignored": "topology header metadata before first section"}
+    if a.name == "model.top" and _top_matches_with_float_ulp(ta, tb):
+        return {
+            "match": True,
+            "ignored": "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention",
+        }
     if a.name == "model.xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
         return {"match": True, "ignored": "OpenSMOG XML generated comment metadata before root element"}
     diff = "\n".join(difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2))

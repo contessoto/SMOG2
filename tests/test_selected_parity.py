@@ -55,11 +55,103 @@ def test_native_accepts_smog2_c_alias_for_user_contacts(tmp_path: Path):
     assert base.with_suffix(".contacts").read_text() == user_contacts.read_text()
 
 
+def test_native_pdb_parser_preserves_four_character_residue_templates(tmp_path: Path):
+    pdb = tmp_path / "four-char-residue.pdb"
+    pdb.write_text(
+        "ATOM      1  O5* DT0P    1      22.620  41.310  33.210\n"
+        "ATOM      2  P   ALA A   2      23.000  41.000  33.000\n"
+    )
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    assert atoms[0][2] == "DT0P"
+    assert atoms[1][2] == "ALA"
+
+
+def test_native_pdb_parser_handles_smog_large_base_numbering():
+    pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "2FP4-GDP.largeformat.pdb"
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    assert atoms[3][0] == "00004"
+    assert atoms[30][0] == "0000v"
+    assert atoms[86][3] == 11
+    assert atoms[86][2] == "VAL"
+
+
+def test_aa_user_bonds_from_pdb_use_chain_group_and_atom_serial():
+    pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "terminaltest.BOND.pdb"
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    assert smog2_native._aa_user_bonds_from_pdb(pdb, atoms) == [(94, 96)]
+
+
+def test_terminal_proline_uses_improper_ring_classification_with_user_bond():
+    pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "terminaltest.BOND.pdb"
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    bonds, angles, dihedrals = smog2_native._case1_topology_sections(
+        atoms,
+        smog2_native._aa_user_bonds_from_pdb(pdb, atoms),
+    )
+    assert (94, 96) in bonds
+    assert len(bonds) == 3770
+    assert len(angles) == 5060
+    assert len(dihedrals) == 11517
+
+
+def test_bonded_geometry_does_not_infer_disulfide_without_user_bond():
+    atoms = [
+        (1, "SG", "CYS", 1, 0.0, 0.0, 0.0, "A:1"),
+        (2, "SG", "CYS", 2, 1.94, 0.0, 0.0, "A:1"),
+    ]
+    bonds, _angles, _proper, _improper = smog2_native._bonded_geometry(atoms)
+    assert bonds == []
+    bonds, _angles, _proper, _improper = smog2_native._bonded_geometry(atoms, [(1, 2)])
+    assert bonds == [(1, 2)]
+
+
+def test_smog2_dihedral_endpoint_prefers_positive_180():
+    assert smog2_native._smog2_dihedral_endpoint(-180.0) == 180.0
+    assert smog2_native._smog2_dihedral_endpoint(-180.0 + 1e-12) == 180.0
+    assert smog2_native._smog2_dihedral_endpoint(-179.999) == -179.999
+
+
+def test_nucleic_amino_template_impropers_do_not_cross_chain_boundary():
+    atoms = [
+        (1, "C3*", "DC", 1, 0.0, 0.0, 0.0, "X:1"),
+        (2, "O3*", "DC", 1, 1.0, 0.0, 0.0, "X:1"),
+        (3, "C", "ALA", 1, 20.0, 0.0, 0.0, "X:2"),
+        (4, "CA", "ALA", 1, 21.0, 0.0, 0.0, "X:2"),
+        (5, "O", "ALA", 1, 20.0, 1.0, 0.0, "X:2"),
+    ]
+    proper, improper = smog2_native._case1_dihedrals(atoms, [])
+    assert proper == []
+    assert improper == []
+
+
+def test_scm_contact_chain_map_preserves_smog2_empty_ter_chain_ids(tmp_path: Path):
+    pdb = tmp_path / "empty-ter.pdb"
+    pdb.write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000\n"
+        "TER\n"
+        "TER\n"
+        "TER\n"
+        "ATOM      2  CA  GLY B   2       1.000   0.000   0.000\n"
+        "TER\n"
+        "ATOM      3  CA  SER C   3       2.000   0.000   0.000\n"
+        "END\n"
+    )
+    assert smog2_native._smog2_contact_chain_map(pdb) == {1: 1, 2: 4, 3: 5}
+
+
+def test_scm_contact_formatter_projects_chain_ids():
+    lines = smog2_native._format_contact_lines(
+        [(1, 1, ("2", "1195")), (2, 5, ("4", "10"))],
+        chain_map={1: 1, 2: 6, 4: 8},
+    )
+    assert lines == ["1 1 6 1195", "6 5 8 10"]
+
+
 def test_selected_aa_gaussian_uses_full_scm_topology(monkeypatch, tmp_path: Path):
     pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "1A01-AMP.pdb"
     base = tmp_path / "case21"
 
-    def fake_scm(_coord, _top, out_contacts, _atoms):
+    def fake_scm(_coord, _top, out_contacts, _atoms, **_kwargs):
         out_contacts.write_text("1 1 2 1195\n")
         return [(1, 1, ("2", "1195"))]
 
@@ -80,6 +172,38 @@ def test_selected_aa_gaussian_uses_full_scm_topology(monkeypatch, tmp_path: Path
     assert "[ angles ]" in top_text
     assert "[ dihedrals ]" in top_text
     assert "\t6\t" in top_text
+
+
+def test_zero_atom_count_contacts_become_type6_bonds(monkeypatch, tmp_path: Path):
+    pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "DNA.terminal.BMG.pdb"
+    base = tmp_path / "case8"
+
+    def fake_scm(_coord, _top, out_contacts, _atoms, **_kwargs):
+        out_contacts.write_text("4 49 6 63\n4 64 6 63\n6 63 6 64\n6 64 6 65\n")
+        return [
+            (4, 49, ("6", "63")),
+            (4, 64, ("6", "63")),
+            (6, 63, ("6", "64")),
+            (6, 64, ("6", "65")),
+        ]
+
+    monkeypatch.setenv("SMOG3_USE_SCM_DEFAULTS", "1")
+    monkeypatch.setattr(smog2_native, "_generate_contacts_with_scm", fake_scm)
+
+    rc = smog2_native.main([
+        "-i", str(pdb),
+        "-AA",
+        "-o", str(base.with_suffix(".top")),
+        "-g", str(base.with_suffix(".gro")),
+        "-n", str(base.with_suffix(".ndx")),
+        "-s", str(base.with_suffix(".contacts")),
+    ])
+
+    top_text = base.with_suffix(".top").read_text()
+    assert rc == 0
+    assert "377\t683\t6\t 4.112395895e-01 2.000000000e+02" in top_text
+    assert "683\t684\t6\t 3.000000000e-01 2.000000000e+02" in top_text
+    assert "377\t683\t1\t" not in top_text
 
 
 def test_selected_shadow_free_uses_java_scm_parameters(monkeypatch, tmp_path: Path):

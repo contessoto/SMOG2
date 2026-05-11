@@ -139,8 +139,15 @@ This script will:
 - exit nonzero if parity fails
 
 For `model.top`, the comparator ignores only the free-form header metadata
-before the first topology section. Section contents, ordering, and numerical
-values remain strict.
+before the first topology section. Section contents and ordering remain
+strict. Inside numeric topology parameter sections (`[ atomtypes ]`,
+`[ bonds ]`, `[ angles ]`, `[ dihedrals ]`, and `[ pairs ]`), the comparator
+also accepts tiny floating-point print ULP differences when row identity,
+token layout, comments, and all non-floating tokens match exactly. The same
+narrow rule treats `+180` and `-180` as equivalent only for the `[ dihedrals ]`
+`phi0` column because they are the same periodic endpoint printed with
+different signs. Larger numeric differences, reordered rows, changed atom
+indices, changed function types, and changed comments remain failures.
 
 For `model.xml`, the comparator similarly ignores only the generated XML
 comment block before the `<OpenSMOGforces>` root element. All OpenSMOG force
