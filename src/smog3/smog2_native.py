@@ -12,6 +12,22 @@ import xml.etree.ElementTree as ET
 
 
 _SMOG_LARGE_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_PACKAGE_ROOT = Path(__file__).resolve().parent
+_CHECKOUT_ROOT = Path(__file__).resolve().parents[2]
+_PACKAGED_DATA_ROOT = _PACKAGE_ROOT / "data"
+
+
+def _runtime_data_path(*parts: str) -> Path:
+    packaged = _PACKAGED_DATA_ROOT.joinpath(*parts)
+    if packaged.exists():
+        return packaged
+    return _CHECKOUT_ROOT.joinpath(*parts)
+
+
+def _runtime_data_root() -> Path:
+    if _PACKAGED_DATA_ROOT.exists():
+        return _PACKAGED_DATA_ROOT
+    return _CHECKOUT_ROOT
 
 
 def _smog_large_base_int(text: str) -> int:
@@ -262,7 +278,7 @@ def _template_atom_attributes(path: Path) -> dict[tuple[str, str], dict[str, str
 
 
 def _template_bond_length_rules(path: Path | None = None) -> list[tuple[tuple[str, str], float, int]]:
-    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     b_path = template_path.with_suffix(".b")
     if not b_path.exists():
         return []
@@ -312,7 +328,7 @@ def _template_bond_length_override(
 
 
 def _bond_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
-    nb_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.nb")
+    nb_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.nb")
     if not nb_path.exists():
         return []
     root = ET.parse(nb_path).getroot()
@@ -348,7 +364,7 @@ def _bond_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
 
 
 def _pair_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
-    nb_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.nb")
+    nb_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.nb")
     if not nb_path.exists():
         return []
     root = ET.parse(nb_path).getroot()
@@ -365,7 +381,7 @@ def _pair_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
 
 def _contact_group_settings(template_path: Path | None = None) -> dict[str, dict[str, float | bool]]:
     if template_path is None:
-        sif_path = Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.sif"
+        sif_path = _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.sif")
     else:
         sif_path = template_path.with_suffix(".sif")
     if not sif_path.exists():
@@ -507,7 +523,7 @@ def _write_opensmog_xml(
         contact_bond_items: list[tuple[int, int, float | None, dict[str, object]]] = []
     else:
         pair_items = _contact_pair_items(atoms, contacts)
-        template_path = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+        template_path = template_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
         nb_path = nb_path or template_path.with_suffix(".nb")
         resnames = _smog2_residue_names(atoms)
         attrs_by_name = _template_atom_attributes(template_path)
@@ -812,7 +828,7 @@ def _bonded_geometry(
     bonds: set[tuple[int, int]] = set()
     adj: dict[int, set[int]] = {i: set() for i in range(1, len(atoms) + 1)}
     chain_ids = _effective_chain_ids(atoms)
-    template = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template = template_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     residue_types = _template_residue_types(template)
 
     def add_bond(i: int, j: int) -> None:
@@ -913,7 +929,7 @@ def _template_geometry(path: Path) -> tuple[dict[str, list[tuple[str, str, str, 
 
 
 def _template_residue_types(path: Path | None = None) -> dict[str, str]:
-    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     if not template_path.exists():
         return {}
     root = ET.parse(template_path).getroot()
@@ -924,7 +940,7 @@ def _template_residue_types(path: Path | None = None) -> dict[str, str]:
 
 
 def _template_bond_orientations(path: Path | None = None) -> dict[str, dict[frozenset[str], tuple[str, str]]]:
-    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     out: dict[str, dict[frozenset[str], tuple[str, str]]] = {}
     if not template_path.exists():
         return out
@@ -941,7 +957,7 @@ def _template_bond_orientations(path: Path | None = None) -> dict[str, dict[froz
 
 
 def _zero_atom_count_residues(path: Path | None = None) -> set[str]:
-    template_path = path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     if not template_path.exists():
         return set()
     root = ET.parse(template_path).getroot()
@@ -1146,7 +1162,7 @@ def _case1_dihedrals(
     template: Path | None = None,
     forced_improper_central_bonds: set[frozenset[int]] | None = None,
 ):
-    template_path = template or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = template or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     template_impropers, bond_groups = _template_geometry(template_path)
     residue_types = _template_residue_types(template_path)
     residues, atom_to_residue, atom_names = _residue_groups(atoms)
@@ -1407,7 +1423,7 @@ def _case1_topology_sections(
     count_dihedrals: bool = True,
     strict_template_bonds: bool = False,
 ):
-    template_path = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = template_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     bonds, angles, graph_dihedrals, _improper_dihedrals = _bonded_geometry(
         atoms,
         extra_bonds,
@@ -1507,7 +1523,7 @@ def _write_top4scm(
 ):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
-    template_path = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    template_path = template_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     ordered_bonds, angles, dihedral_rows = _case1_topology_sections(
         atoms,
         extra_bonds,
@@ -1763,7 +1779,7 @@ def _write_ca_final_top(
 
 
 def _shadow_free_template_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.free.bif"
+    return _runtime_data_path("SMOG-CHECK", "share", "templates", "SBM_AA", "AA-test.free.bif")
 
 
 def _shadow_free_atom_attrs(atoms) -> list[dict[str, str]]:
@@ -1976,8 +1992,8 @@ def _write_case1_final_top(
 ):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
-    template_path = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
-    nb_path = nb_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.nb")
+    template_path = template_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
+    nb_path = nb_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.nb")
     ordered_bonds, angles, dihedral_rows = _case1_topology_sections(
         atoms,
         extra_bonds,
@@ -2132,7 +2148,7 @@ def _write_case1_final_top(
 
 
 def _match_template_paths() -> tuple[Path, Path]:
-    root = Path(__file__).resolve().parents[2] / "SMOG-CHECK" / "share" / "templates" / "SBM_match"
+    root = _runtime_data_path("SMOG-CHECK", "share", "templates", "SBM_match")
     return root / "CB.bif", root / "CB.nb"
 
 
@@ -2359,8 +2375,8 @@ def _generate_contacts_with_scm(
     bif_path: Path | None = None,
 ):
     java = shutil.which("java")
-    scm = Path(__file__).resolve().parents[1] / "tools" / "SCM.jar"
-    bif = bif_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    scm = _runtime_data_path("tools", "SCM.jar")
+    bif = bif_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     if not java or not scm.exists() or not bif.exists():
         return None
     scm_chains = out_contacts.with_name(out_contacts.with_suffix(".ndx").name)
@@ -2441,8 +2457,8 @@ def _generate_ca_contacts_with_scm(
     bif_path: Path | None = None,
 ):
     java = shutil.which("java")
-    scm = Path(__file__).resolve().parents[1] / "tools" / "SCM.jar"
-    bif = bif_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+    scm = _runtime_data_path("tools", "SCM.jar")
+    bif = bif_path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     if not java or not scm.exists() or not bif.exists():
         return None
 
@@ -2586,7 +2602,10 @@ def main(argv: list[str]) -> int:
     elif ns.CA:
         model = "CA"
 
-    if ns.help or not ns.i or not model:
+    if ns.help:
+        print("Python-native smog3 usage: smog3 -i <pdb> with supported model flags (-AA/-CA/-AA2cg/-AAgaussian/-CAgaussian/-AACC1/-AACCD/-AADIHE/-AADIHE4)")
+        return 0
+    if not ns.i or not model:
         print("Python-native smog2 usage: -i <pdb> with supported model flags (-AA/-CA/-AA2cg/-AAgaussian/-CAgaussian/-AACC1/-AACCD/-AADIHE/-AADIHE4)")
         return 2
     if extra:
@@ -2616,7 +2635,7 @@ def main(argv: list[str]) -> int:
         contacts_path = Path(f"{d}.contacts")
 
     atomtype = "CA" if model.startswith("CA") else ("AA2CG" if model == "AA2CG" else "AA")
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = _runtime_data_root()
     aa_testing_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.bif"
     aa_testing_nb = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.nb"
     aa_static_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA_STATIC" / "AA-test.bif"

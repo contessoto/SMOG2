@@ -6,6 +6,10 @@
 /smogcheck_dropin_runs/
 /table.xvg
 /baseline_case1/
+/build/
+/dist/
+/*.egg-info/
+/src/*.egg-info/
 /*.contacts
 /*.contacts.*
 /*.gro

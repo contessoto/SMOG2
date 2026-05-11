@@ -15,6 +15,10 @@ from .smog2_native import main as smog2_native_main
 from .parity_direct import main as parity_direct_main
 
 
+def smog3_main() -> int:
+    return smog2_native_main(sys.argv[1:])
+
+
 def smog2_main() -> int:
     rc = smog2_native_main(sys.argv[1:])
     if rc != 0 and os.environ.get("SMOG3_LEGACY_PERL_FALLBACK", "0") == "1":
