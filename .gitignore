@@ -3,6 +3,7 @@
 /parity_case1.json
 /parity_runs/
 /parity_selected.json
+/real_pdb_validation/
 /smogcheck_dropin_runs/
 /table.xvg
 /baseline_case1/
@@ -13,9 +14,14 @@
 /*.contacts
 /*.contacts.*
 /*.gro
+/*.gro.*
 /*.g96
 /*.ndx
+/*.ndx.*
+/*.pdb
 /*.top
+/*.top.*
 /*.xml
+/*.xml.*
 __pycache__/
 *.py[cod]

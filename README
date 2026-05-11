@@ -314,6 +314,35 @@ that routes SMOG-CHECK calls to the Python-native SMOG3 runtime:
 
 The TestPyPI package intentionally does not publish a default `smog2` command.
 
+Real PDB panel validation
+-------------------------
+After installing SMOG3, or from a source checkout, you can compare SMOG3
+against original SMOG2 on a small panel of real structures.  The baseline is
+always generated inside the official `smogserver/smog2:stable` Docker image.
+SMOG3 is run locally with Python plus Java SCM where contact generation needs
+it, with `SMOG3_LEGACY_PERL_FALLBACK=0`.
+
+Run against the source checkout:
+
+> bash scripts/validate_real_pdb_panel.sh
+
+Run against a TestPyPI-installed `smog3` command:
+
+> bash scripts/validate_real_pdb_panel.sh --use-installed-smog3
+
+Run a small local-file-only panel without external downloads:
+
+> bash scripts/validate_real_pdb_panel.sh --local-only --cases protein_ci2,dna
+
+The script writes inputs, SMOG2 baseline outputs, SMOG3 candidate outputs, and
+JSON/Markdown reports under `real_pdb_validation/`.  It first attempts exact
+comparison, with only the documented harmless metadata/tiny topology print
+policy used by the existing parity comparator.  Cases are classified as
+`PASS`, `DIFF`, `SMOG2_ERROR`, `SMOG3_ERROR`, `DOWNLOAD_ERROR`, or
+`UNSUPPORTED`.  Downloaded RCSB structures may expose input-preparation issues
+that are separate from SMOG3 parity; when downloads fail or SMOG2 rejects a
+downloaded file, the script falls back to representative local SMOG-CHECK PDBs.
+
 End-to-end verification command
 -------------------------------
 Use the release-readiness commands from the repository root:

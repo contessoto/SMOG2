@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 
@@ -2929,3 +2930,7 @@ def main(argv: list[str]) -> int:
 
     print(f"\nYour Structure-based Model is ready!\n\nFiles generated:\n\t{top}\n\t{coord}\n\t{ndx}\n\t{contacts_path}\n")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
