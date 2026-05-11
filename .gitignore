@@ -3,6 +3,7 @@
 /parity_case1.json
 /parity_runs/
 /parity_selected.json
+/smogcheck_dropin_runs/
 /table.xvg
 __pycache__/
 *.py[cod]

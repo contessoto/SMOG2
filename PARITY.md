@@ -170,6 +170,56 @@ SMOG3 normal runtime uses zero Perl. Original SMOG2 is run only inside the
 official `smogserver/smog2:stable` Docker image to generate baseline outputs.
 SMOG3 uses Python plus Java where needed for SCM contact generation.
 
+## Drop-in SMOG-CHECK harness compatibility
+
+The two-stage parity campaign above is not the same as running the original
+`SMOG-CHECK/smog-check` script with `smog2` replaced on `PATH`.  The original
+harness has SMOG2 installation-layout assumptions: it reads the last line of
+the `smog2` executable to infer `SMOG_PATH`, Perl module paths, template
+directories, and `src/tools/SCM.jar`.
+
+`scripts/run_smogcheck_dropin_smog3.sh` creates a temporary compatibility
+layout under `smogcheck_dropin_runs/`, creates a temporary `bin/smog2` wrapper,
+puts that directory first in `PATH`, and runs the original `SMOG-CHECK`
+harness from a copied work directory.  The wrapper body invokes:
+
+```bash
+python3 -m smog3.smogcheck_dropin_smog2
+```
+
+It sets `SMOG3_LEGACY_PERL_FALLBACK=0` and logs every wrapper invocation to
+`smog3-wrapper-invocations.jsonl`.  The final trailer line in the wrapper is
+present only so the original harness can discover its expected SMOG2-style
+layout; execution exits before that trailer and does not call Perl from SMOG3.
+The harness itself is still Perl because `SMOG-CHECK/smog-check` is Perl-based.
+
+Latest drop-in harness checks:
+
+| Harness command | Result |
+| --- | --- |
+| `bash scripts/run_smogcheck_dropin_smog3.sh 1 50` | 50/50 PASS |
+| `bash scripts/run_smogcheck_dropin_smog3.sh 51 60` | 10/10 PASS |
+| `bash scripts/run_smogcheck_dropin_smog3.sh 61 80` | 20/20 PASS |
+| `bash scripts/run_smogcheck_dropin_smog3.sh 81 115` | PASS through 93, OpenSMOG/DIHE failures afterward, harness crash at 112 |
+| `bash scripts/run_smogcheck_dropin_smog3.sh 114 115` | 2/2 PASS |
+
+Aggregating the direct harness runs above gives 99 PASS, 14 FAIL, and 2
+HARNESS_CRASH cases.  This is intentionally reported separately from the
+two-stage Docker-baseline parity result.
+
+Observed direct-harness failures:
+
+| Cases | Classification | Evidence |
+| --- | --- | --- |
+| 94-104, 106 | OpenSMOG output differences versus local SMOG-CHECK v2.7beta checks | The harness reports `TOP FIELDS FOUND` and `OPENSMOG: EXCLUSIONS`; for case 94 it expected XML exclusion generation `1` but found `0`. |
+| 110-111 | DIHE template topology/defaults mismatch | The harness reports `DEFAULTS, num entries` because it expected 3 default fields and found 5. |
+| 112-113 | SMOG-CHECK harness internal crash | The harness exits with `Internal error : DUPLICATE DIHEDRAL CHECKING` before completing the cases. |
+
+These direct-harness failures are not hidden by the comparator and should not
+be described as full SMOG-CHECK success.  They are the next compatibility
+targets if the goal shifts from Docker-baseline output parity to satisfying the
+local original SMOG-CHECK v2.7beta introspection checks directly.
+
 The five `BASELINE_ERROR` cases are not counted as SMOG3 failures. In each
 case, the official Docker image reports SMOG v2.4.5 and exits before complete
 baseline outputs are written. `-warn -1` was also checked and still did not
@@ -195,6 +245,12 @@ Run the selected representative parity set:
 
 ```bash
 bash scripts/run_selected_two_stage_parity.sh
+```
+
+Run the original SMOG-CHECK harness against a SMOG3-backed `smog2` wrapper:
+
+```bash
+bash scripts/run_smogcheck_dropin_smog3.sh 1 50
 ```
 
 Run the full SMOG-CHECK-style parity campaign:

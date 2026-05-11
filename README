@@ -46,10 +46,12 @@ Useful SMOG3 verification commands:
 >PYTHONPATH=src pytest -q tests
 >bash scripts/run_selected_two_stage_parity.sh
 >bash scripts/run_all_smogcheck_two_stage_parity.sh --all
+>bash scripts/run_smogcheck_dropin_smog3.sh 1 50
 
 Generated parity reports and output directories are local
 artifacts and should not be committed.  See PARITY.md for the
-full status table, comparator policy, and baseline-error notes.
+full status table, comparator policy, drop-in SMOG-CHECK harness
+notes, and baseline-error notes.
 
 We encourage everyone to provide feedback/suggestions
 on usage, extensions and bugs to info@smog-server.org,

@@ -2307,6 +2307,9 @@ def _generate_contacts_with_scm(
     cp = subprocess.run(cmd, capture_output=True, text=True)
     if cp.returncode != 0 or not out_contacts.exists():
         return None
+    shadow_output = out_contacts.with_suffix(out_contacts.suffix + ".ShadowOutput")
+    if not shadow_output.exists():
+        shutil.copyfile(out_contacts, shadow_output)
     serial_by_index = {i: a[0] for i, a in enumerate(atoms, start=1)}
     contacts = []
     for ln in out_contacts.read_text().splitlines():
@@ -2625,6 +2628,10 @@ def main(argv: list[str]) -> int:
 
     _write_smog2_like_ndx(ndx, atoms, include_chain_groups=include_chain_groups)
 
+    if ns.userContacts and selected_scm_contacts and atomtype in {"AA", "AA2CG"} and not ns.g96:
+        _write_gro4scm(coord.with_name(f"{coord.name}4SCM.gro"), atoms)
+        _write_top4scm(top.with_name(f"{top.name}4SCM.top"), atoms, aa_extra_bonds)
+
     if ns.userContacts:
         contacts = _parse_user_contacts(Path(ns.userContacts))
     elif selected_scm_contact_mode:
@@ -2706,7 +2713,7 @@ def main(argv: list[str]) -> int:
         else {}
     )
     contact_lines = _format_contact_lines(contacts, chain_map=chain_map)
-    if not (selected_scm_contacts and ns.userContacts):
+    if not (selected_scm_contacts and ns.userContacts) or os.environ.get("SMOG3_DROPIN_WRITE_USER_CONTACTS") == "1":
         contacts_path.write_text("\n".join(contact_lines) + ("\n" if contact_lines else ""))
     if model == "AA-MATCH":
         _write_match_final_top(

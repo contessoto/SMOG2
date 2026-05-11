@@ -38,7 +38,9 @@ def test_selected_parity_reports_per_case_comparisons(monkeypatch, tmp_path: Pat
     assert report["cases"][1]["comparisons"]["model.xml"]["match"] is True
 
 
-def test_native_accepts_smog2_c_alias_for_user_contacts(tmp_path: Path):
+def test_native_accepts_smog2_c_alias_for_user_contacts(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SMOG3_USE_SCM_DEFAULTS", "1")
+    monkeypatch.setenv("SMOG3_DROPIN_WRITE_USER_CONTACTS", "1")
     pdb = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "2ci2_v2.pdb"
     user_contacts = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "PDB.files" / "2ci2_v2.contacts"
     base = tmp_path / "case50"
@@ -53,6 +55,8 @@ def test_native_accepts_smog2_c_alias_for_user_contacts(tmp_path: Path):
     ])
     assert rc == 0
     assert base.with_suffix(".contacts").read_text() == user_contacts.read_text()
+    assert base.with_suffix(".gro4SCM.gro").exists()
+    assert base.with_suffix(".top4SCM.top").exists()
 
 
 def test_native_pdb_parser_preserves_four_character_residue_templates(tmp_path: Path):
