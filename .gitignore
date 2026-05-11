@@ -5,5 +5,13 @@
 /parity_selected.json
 /smogcheck_dropin_runs/
 /table.xvg
+/baseline_case1/
+/*.contacts
+/*.contacts.*
+/*.gro
+/*.g96
+/*.ndx
+/*.top
+/*.xml
 __pycache__/
 *.py[cod]

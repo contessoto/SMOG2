@@ -32,21 +32,32 @@ implementation under src/smog3.  Normal SMOG3 runtime does
 not invoke Perl.  Java is used where needed for the existing
 SCM contact-generation workflow.
 
-The current SMOG-CHECK-style two-stage parity campaign runs
-original SMOG2 only inside the official smogserver/smog2:stable
-Docker image and runs SMOG3 locally with Python plus Java.  The
-latest verified result is 110 passing runnable baseline cases,
-0 SMOG3 failures, 0 unsupported cases, and 5 BASELINE_ERROR
-cases where the official SMOG2 Docker image cannot generate
-complete baseline outputs for the current repository templates.
-Those baseline errors are cases 104, 110, 111, 112, and 113.
+Latest verified release-readiness status:
+
+- Python tests: 95 passed.
+- Selected two-stage parity: all selected cases OK.
+- Original drop-in SMOG-CHECK harness: PASSED TESTS 1 to 115.
+- SMOG3 runtime: Python plus Java only, zero Perl.
+
+The original SMOG-CHECK harness is itself Perl.  In the drop-in
+test, its `smog2` calls are routed through a temporary SMOG3-backed
+wrapper with `SMOG3_LEGACY_PERL_FALLBACK=0`; the full run wrapper
+log recorded 138 SMOG3 invocations.
+
+The SMOG-CHECK-style two-stage parity campaign still runs original
+SMOG2 only inside the official smogserver/smog2:stable Docker image
+and runs SMOG3 locally with Python plus Java.  Its latest verified
+result is 110 passing runnable baseline cases, 0 SMOG3 failures,
+0 unsupported cases, and 5 BASELINE_ERROR cases where the official
+SMOG2 Docker image cannot generate complete baseline outputs for
+the current repository templates.  Those baseline errors are cases
+104, 110, 111, 112, and 113.
 
 Useful SMOG3 verification commands:
 
 >PYTHONPATH=src pytest -q tests
 >bash scripts/run_selected_two_stage_parity.sh
->bash scripts/run_all_smogcheck_two_stage_parity.sh --all
->bash scripts/run_smogcheck_dropin_smog3.sh 1 50
+>bash scripts/run_smogcheck_dropin_smog3.sh 1 115
 
 Generated parity reports and output directories are local
 artifacts and should not be committed.  See PARITY.md for the
@@ -253,13 +264,12 @@ user manual.
 
 ########################################################
 
-              SMOG3 (Python successor scaffold)
+              SMOG3 (Python-native successor)
 
-A compatibility-first Python package scaffold (`smog3`) is included for
-incremental migration of SMOG2 Perl entry points. It currently provides
-PyPI-ready packaging metadata and console scripts that delegate to the
-existing SMOG2 Perl implementation to preserve behavior while migration
-proceeds.
+The `smog3` Python package contains the Python-native SMOG3 runtime and
+compatibility entry points.  Normal SMOG3 execution is not a Perl wrapper:
+the verified SMOG-CHECK paths run through Python-native code and Java SCM
+where contact generation requires it.
 
 Quick local install for development:
 
@@ -275,8 +285,10 @@ This installs the following console scripts through Python packaging:
 - smog_scale-energies
 - smog_tablegen
 
-In this initial phase, each command forwards to the original Perl scripts
-under `src/` while preserving SMOG_PATH/PERL library context.
+The `smog2` entry point is the SMOG3 native runtime.  Some legacy helper
+compatibility modules remain in the tree for historical migration and
+diagnostic workflows, but they are not used by the verified normal SMOG3
+runtime or by the drop-in SMOG-CHECK wrapper.
 
 ########################################################
 
@@ -295,13 +307,11 @@ style expected by SMOG-CHECK.
 
 End-to-end verification command
 -------------------------------
-Use:
+Use the release-readiness commands from the repository root:
 
-> smog3-verify
+> PYTHONPATH=src pytest -q tests
+> bash scripts/run_selected_two_stage_parity.sh
+> bash scripts/run_smogcheck_dropin_smog3.sh 1 115
 
-This runs the Python test suite and, when Perl dependencies are available,
-runs full `SMOG-CHECK/smog-check` via generated compatibility wrappers.
-
-To enforce full smog-check execution (fail if Perl deps are missing), use:
-
-> smog3-verify --require-full
+The last command runs the original Perl SMOG-CHECK harness with a temporary
+`smog2` wrapper that calls SMOG3.  It should report `PASSED TESTS 1 to 115`.
