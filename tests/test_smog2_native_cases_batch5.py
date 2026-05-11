@@ -9,6 +9,7 @@ def _count_ndx_atoms(path: Path) -> int:
 
 
 import smog3.cli as cli
+from smog3 import smog2_native
 
 
 def _count_section(top_text: str, section: str) -> int:
@@ -32,6 +33,19 @@ def _read_contacts(path: Path):
             continue
         out.append(tuple(s.split()))
     return out
+
+
+def test_aa_test_template_uses_constant_fes_bond_length():
+    template = Path(__file__).resolve().parents[1] / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.bif"
+    atoms = [
+        (1, "S1", "FES", 1, 0.0, 0.0, 0.0, "A"),
+        (2, "FE1", "FES", 1, 2.2, 0.0, 0.0, "A"),
+    ]
+    attrs = smog2_native._template_atom_attributes(template)
+    rules = smog2_native._template_bond_length_rules(template)
+
+    assert smog2_native._distance_nm(atoms, 1, 2) == 0.22000000000000003
+    assert smog2_native._template_bond_length_override(atoms, ["FES", "FES"], attrs, rules, 1, 2) == 0.21
 
 
 def test_user_contact_and_2cg_cases_use_native_without_perl(monkeypatch, tmp_path: Path):
@@ -77,10 +91,13 @@ def test_user_contact_and_2cg_cases_use_native_without_perl(monkeypatch, tmp_pat
         pdb_res = len({(ln[21:22], ln[22:26].strip(), ln[26:27], ln[17:20].strip()) for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM"))})
 
         assert _count_section(top_text, "atoms") == pdb_atoms
-        assert _count_section(top_text, "bonds") == max(0, pdb_atoms - 1)
+        if atomtype == "AA2CG":
+            assert _count_section(top_text, "bonds") > max(0, pdb_atoms - 1)
+        else:
+            assert _count_section(top_text, "bonds") == max(0, pdb_atoms - 1)
         assert _count_section(top_text, "molecules") == 1
         assert pdb_res >= 1
-        assert f" {atomtype} " in top_text
+        assert (" NB_1 " in top_text) if atomtype == "AA2CG" else (f" {atomtype} " in top_text)
 
         ndx_atoms = _count_ndx_atoms(ndx)
         assert ndx_atoms == pdb_atoms
@@ -90,6 +107,8 @@ def test_user_contact_and_2cg_cases_use_native_without_perl(monkeypatch, tmp_pat
         if "-userContacts" in mode_args:
             src_rows = _read_contacts(userc)
             assert contact_rows == src_rows
+            assert len(contact_rows) > 0
+        elif atomtype == "AA2CG":
             assert len(contact_rows) > 0
         else:
             assert len(contact_rows) == 0

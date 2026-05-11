@@ -9,10 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .parity_direct import compare_existing_dirs
-from .selected_parity import _case56_shadow_free_setup
-
 ROOT = Path(__file__).resolve().parents[2]
 TESTLIST = ROOT / "SMOG-CHECK" / "share" / "settings" / "smog2.testlist"
+DOCKER_SMOGCHECK_TEMPLATES = "/workdir/SMOG-CHECK/share/templates"
 
 KNOWN_MODELS = {
     "AA",
@@ -41,6 +40,16 @@ MODEL_FLAGS = {
     ("AA-DIHE", False): ["-AADIHE"],
     ("AA-DIHE4", False): ["-AADIHE4"],
     ("AA-match", False): ["-AAMATCH"],
+}
+
+BASELINE_TEMPLATE_FLAGS = {
+    "AA-2cg": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_2cg"],
+    "AA-nb-cr2": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_cr2"],
+    "AA-CC1": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA+customContacts"],
+    "AA-CCD": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA+customContacts+customDihedrals"],
+    "AA-BOND": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA_BOND"],
+    "AA-DIHE": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA_DIHE"],
+    "AA-DIHE4": [f"-t", f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA_DIHE4"],
 }
 
 
@@ -141,6 +150,181 @@ def _model_flags(case: SmogcheckCase) -> list[str] | None:
     return MODEL_FLAGS.get((case.model, case.gaussian))
 
 
+def _baseline_model_flags(case: SmogcheckCase) -> list[str] | None:
+    if case.contact_model in {"shadow", "shadow-free", "cutoff", "cutoff-gaussian"}:
+        if case.model == "AA":
+            return ["-t", "temp.bifsif/"]
+        if case.model == "CA":
+            return ["-tCG", "temp.bifsif/", "-t", "temp.cont.bifsif"]
+    if case.contact_model == "shadow-match" and case.model == "AA-match":
+        return ["-t", "temp.bifsif/"]
+    if case.contact_model == "default" and case.model in BASELINE_TEMPLATE_FLAGS:
+        return list(BASELINE_TEMPLATE_FLAGS[case.model])
+    return _model_flags(case)
+
+
+def _param(case: SmogcheckCase, index: int, default: str) -> str:
+    return case.params[index] if index < len(case.params) else default
+
+
+def _fmt_num(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def _nondefault_values(case: SmogcheckCase) -> dict[str, str]:
+    params = case.params
+    if case.contact_model in {"shadow", "shadow-free"}:
+        return {
+            "CONTD": _param(case, 0, "5.0"),
+            "CONTR": _param(case, 1, "1.0"),
+            "STACKSCALE": "1.0",
+            "R_CD": _param(case, 2, "1.2"),
+            "R_P_BB_SC": _param(case, 3, "1.0"),
+            "R_N_SC_BB": _param(case, 4, "2.0"),
+            "PRO_DIH": _param(case, 5, "1.0"),
+            "NA_DIH": _param(case, 6, "1.0"),
+            "LIGAND_DIH": _param(case, 7, "1.0"),
+            "sigma": _param(case, 8, "2.5"),
+            "epsilon": _param(case, 9, "0.01"),
+            "epsilonCAC": _param(case, 10, "1.0"),
+            "epsilonCAD": _param(case, 11, "1.4"),
+            "sigmaCA": _param(case, 12, "5.0"),
+            "massNB2": _param(case, 13, "0.2"),
+            "chargeNB2": _param(case, 14, "-1"),
+            "C6NB2": _param(case, 15, "1E-6"),
+            "C12NB2": _param(case, 16, "3E-9"),
+            "chargeAT": _param(case, 17, "1.0"),
+            "DIHEDCOUNT": "0",
+        }
+    if case.contact_model in {"cutoff", "cutoff-gaussian"}:
+        return {
+            "CONTD": _param(case, 0, "5.0"),
+            "CONTR": "0.0",
+            "STACKSCALE": _param(case, 1, "1.0"),
+            "R_CD": _param(case, 2, "1.2"),
+            "R_P_BB_SC": _param(case, 3, "1.0"),
+            "R_N_SC_BB": _param(case, 4, "2.0"),
+            "PRO_DIH": _param(case, 5, "1.0"),
+            "NA_DIH": _param(case, 6, "1.0"),
+            "LIGAND_DIH": _param(case, 7, "1.0"),
+            "sigma": _param(case, 8, "2.5"),
+            "epsilon": _param(case, 9, "0.01"),
+            "epsilonCAC": _param(case, 10, "1.0"),
+            "epsilonCAD": _param(case, 11, "1.4"),
+            "sigmaCA": _param(case, 12, "5.0"),
+            "massNB2": _param(case, 13, "0.2"),
+            "chargeNB2": _param(case, 14, "-1"),
+            "C6NB2": _param(case, 15, "1E-6"),
+            "C12NB2": _param(case, 16, "3E-9"),
+            "chargeAT": _param(case, 17, "1.0"),
+            "DIHEDCOUNT": _param(case, 18, "0"),
+        }
+    return {}
+
+
+def _aa_template_setup(case: SmogcheckCase) -> str:
+    values = _nondefault_values(case)
+    if not values:
+        return ""
+    template = f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA"
+    pro_dih = float(values["PRO_DIH"])
+    na_dih = float(values["NA_DIH"])
+    parm_p_bb = pro_dih
+    parm_p_sc = pro_dih / float(values["R_P_BB_SC"])
+    parm_n_bb = na_dih
+    parm_n_sc = na_dih * float(values["R_N_SC_BB"])
+    sigma_nm = float(values["sigma"]) / 10.0
+    c12_nb1 = (sigma_nm**12) * float(values["epsilon"])
+    sif_name = {
+        "shadow": "AA-test.shadow.sif",
+        "shadow-free": "AA-test.shadow.free.sif",
+        "cutoff": "AA-test.cutoff.sif",
+        "cutoff-gaussian": "AA-test.cutoff.gaussian.sif",
+    }[case.contact_model]
+    if case.contact_model == "shadow-free":
+        nb_name = "AA-test.free.nb"
+        bif_name = "AA-test.free.bif"
+        b_name = "AA-test.free.b"
+    else:
+        nb_name = "AA-test.gaussian.nb" if case.contact_model == "cutoff-gaussian" else "AA-test.nb"
+        bif_name = "AA-test.bif"
+        b_name = "AA-test.b"
+    sif_replacements = (
+        f"s/PARM_C_D/{values['R_CD']}/g;"
+        f"s/PARM_P_BB/{_fmt_num(parm_p_bb)}/g;"
+        f"s/PARM_P_SC/{_fmt_num(parm_p_sc)}/g;"
+        f"s/PARM_N_BB/{_fmt_num(parm_n_bb)}/g;"
+        f"s/PARM_N_SC/{_fmt_num(parm_n_sc)}/g;"
+        f"s/CUTDIST/{values['CONTD']}/g;"
+    )
+    if case.contact_model in {"shadow", "shadow-free"}:
+        sif_replacements += f"s/SCM_R/{values['CONTR']}/g;s/SCM_BR/0.5/g;"
+    else:
+        sif_replacements += f"s/RESCALE/{values['STACKSCALE']}/g;s/DIHEDCOUNT/{values['DIHEDCOUNT']}/g;"
+    sif_replacements += "s/MINVERSION/2.4.5/g"
+    nb_replacements = (
+        f"s/PARM_MASS/{values['massNB2']}/g;"
+        f"s/PARM_chargeNB/{values['chargeNB2']}/g;"
+        f"s/PARM_C6_2/{values['C6NB2']}/g;"
+        f"s/PARM_C12_2/{values['C12NB2']}/g;"
+        f"s/PARM_C12/{_fmt_num(c12_nb1)}/g"
+    )
+    return f"""
+mkdir -p temp.bifsif
+sed "{sif_replacements}" {template}/{sif_name} > temp.bifsif/tmp.sif
+sed "{nb_replacements}" {template}/{nb_name} > temp.bifsif/tmp.nb
+cp {template}/{bif_name} temp.bifsif/tmp.bif
+cp {template}/{b_name} temp.bifsif/tmp.b
+cp {template}/extras temp.bifsif/test.extras
+"""
+
+
+def _ca_template_setup(case: SmogcheckCase) -> str:
+    values = _nondefault_values(case)
+    if not values:
+        return ""
+    ca_template = f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_calpha"
+    aa_template = f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_AA_STATIC"
+    sigma_ca_nm = float(values["sigmaCA"]) / 10.0
+    c12_ca = sigma_ca_nm**12
+    epsilon_cad3 = float(values["epsilonCAD"]) / 2.0
+    if case.contact_model == "shadow":
+        contact_sif = (
+            f'sed "s/CUTDIST/{values["CONTD"]}/g;s/SCM_R/{values["CONTR"]}/g;'
+            f's/SCM_BR/0.5/g;s/MINVERSION/2.4.5/g" '
+            f"{aa_template}/AA-test.shadow.sif > temp.cont.bifsif/tmp.cont.sif"
+        )
+    else:
+        contact_sif = (
+            f'sed "s/CUTDIST/{values["CONTD"]}/g;s/RESCALE/{values["STACKSCALE"]}/g;'
+            f's/DIHEDCOUNT/{values["DIHEDCOUNT"]}/g;s/MINVERSION/2.4.5/g" '
+            f"{aa_template}/AA-test.cutoff.sif > temp.cont.bifsif/tmp.cont.sif"
+        )
+    return f"""
+mkdir -p temp.bifsif temp.cont.bifsif
+sed "s/EPS_CONT/{values['epsilonCAC']}/g;s/EPS_DIH/{values['epsilonCAD']}/g;s/EPS_dih3/{_fmt_num(epsilon_cad3)}/g;s/MINVERSION/2.4.5/g" {ca_template}/CA-test.sif > temp.bifsif/tmp.sif
+sed "s/PARM_C12/{_fmt_num(c12_ca)}/g;s/EPS_CONT/{values['epsilonCAC']}/g" {ca_template}/CA-test.nb > temp.bifsif/tmp.nb
+sed "s/EPS_CONT/{values['epsilonCAC']}/g;s/EPS_DIH/{values['epsilonCAD']}/g;s/EPS_dih3/{_fmt_num(epsilon_cad3)}/g" {ca_template}/CA-test.b > temp.bifsif/tmp.b
+cp {ca_template}/CA-test.bif temp.bifsif/tmp.bif
+cp {aa_template}/AA-test.bif temp.cont.bifsif/tmp.cont.bif
+cp {aa_template}/AA-test.nb temp.cont.bifsif/tmp.cont.nb
+cp {aa_template}/AA-test.b temp.cont.bifsif/tmp.cont.b
+{contact_sif}
+"""
+
+
+def _match_template_setup(case: SmogcheckCase) -> str:
+    genpairs = _param(case, 2, "0")
+    fudgelj = _param(case, 3, "1.0")
+    fudgeqq = _param(case, 4, "1.0")
+    template = f"{DOCKER_SMOGCHECK_TEMPLATES}/SBM_match"
+    return f"""
+mkdir -p temp.bifsif
+cp -r {template}/. temp.bifsif/
+sed "s/GENPAIRS/{genpairs}/g;s/FUDGELJ/{fudgelj}/g;s/FUDGEQQ/{fudgeqq}/g" {template}/CB.nb > temp.bifsif/CB.nb
+"""
+
+
 def _supported(case: SmogcheckCase) -> tuple[bool, str]:
     if case.interactive:
         return False, "interactive prompt workflow is not implemented natively"
@@ -148,27 +332,24 @@ def _supported(case: SmogcheckCase) -> tuple[bool, str]:
         return False, "freecoor input normalization is not implemented natively"
     if case.model == "AA-nb-cr2":
         return False, "AA-nb-cr2 template is not implemented natively"
-    if case.contact_model == "shadow-match":
-        return False, "AA-match shadow-match template setup is not implemented natively"
-    if case.contact_model in {"shadow", "cutoff", "cutoff-gaussian"}:
-        return False, "parameterized non-default contact/template setup is not fully implemented natively"
-    if case.contact_model == "shadow-free" and case.case_id != 56:
-        return False, "shadow-free topology template parity is only partially implemented"
     if _model_flags(case) is None:
         return False, f"model {case.model} is not implemented natively"
     return True, ""
 
 
 def _baseline_setup(case: SmogcheckCase) -> str:
-    if case.case_id == 56:
-        return _case56_shadow_free_setup()
+    if case.contact_model in {"shadow", "shadow-free", "cutoff", "cutoff-gaussian"}:
+        if case.model == "AA":
+            return _aa_template_setup(case)
+        if case.model == "CA":
+            return _ca_template_setup(case)
+    if case.contact_model == "shadow-match" and case.model == "AA-match":
+        return _match_template_setup(case)
     return ""
 
 
 def _baseline_args(case: SmogcheckCase, outdir: Path) -> list[str] | None:
-    flags = _model_flags(case)
-    if case.case_id == 56:
-        flags = ["-t", "temp.bifsif"]
+    flags = _baseline_model_flags(case)
     if flags is None:
         return None
     args = [
@@ -218,8 +399,44 @@ def _candidate_args(case: SmogcheckCase, outdir: Path) -> list[str] | None:
     args.extend(flags)
     if case.user_contacts:
         args.extend(["-c", f"SMOG-CHECK/share/PDB.files/{case.stem}.contacts"])
-    if case.contact_model == "shadow-free":
-        args.extend(["-contactMode", "shadow-free", "-contactParam", case.params[0] if case.params else "5.0"])
+    if case.model == "AA-match":
+        args.extend(
+            [
+                "-matchGenPairs",
+                _param(case, 2, "0"),
+                "-matchFudgeLJ",
+                _param(case, 3, "1.0"),
+                "-matchFudgeQQ",
+                _param(case, 4, "1.0"),
+            ]
+        )
+    if case.contact_model in {"shadow", "shadow-free", "shadow-match"}:
+        native_mode = "shadow-free" if case.contact_model == "shadow-free" else "shadow"
+        args.extend(
+            [
+                "-contactMode",
+                native_mode,
+                "-contactParam",
+                _param(case, 0, "5.0"),
+                "-contactShadowSize",
+                _param(case, 1, "1.0"),
+                "-contactBondedRadius",
+                "0.5",
+            ]
+        )
+    elif case.contact_model in {"cutoff", "cutoff-gaussian"}:
+        args.extend(
+            [
+                "-contactMode",
+                case.contact_model,
+                "-contactParam",
+                _param(case, 0, "5.0"),
+                "-contactStackScale",
+                _param(case, 1, "1.0"),
+                "-dihedralCounting",
+                _param(case, 18, "0"),
+            ]
+        )
     return args
 
 

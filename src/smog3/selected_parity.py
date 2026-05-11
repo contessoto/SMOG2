@@ -34,13 +34,13 @@ def _case56_shadow_free_setup() -> str:
     sigma_nm = 2.5 / 10.0
     epsilon = 0.01
     c12_nb1 = (sigma_nm**12) * epsilon
-    template = "/opt/smog2/SMOG-CHECK/share/templates/SBM_AA"
+    template = "/workdir/SMOG-CHECK/share/templates/SBM_AA"
     return f"""
 mkdir -p temp.bifsif
-sed "s/PARM_C_D/1.2/g;s/PARM_P_BB/1.0/g;s/PARM_P_SC/1.0/g;s/PARM_N_BB/1.0/g;s/PARM_N_SC/2.0/g;s/CUTDIST/5.0/g;s/SCM_R/1.4/g;s/SCM_BR/0.5/g;s/MINVERSION/2.4.5/g" {template}/AA-whitford09.shadow.free.sif > temp.bifsif/tmp.sif
-sed "s/PARM_MASS/0.2/g;s/PARM_chargeNB/-1/g;s/PARM_C6_2/1E-6/g;s/PARM_C12_2/3E-9/g;s/PARM_C12/{c12_nb1:.12g}/g" {template}/AA-whitford09.free.nb > temp.bifsif/tmp.nb
-cp {template}/AA-whitford09.free.bif temp.bifsif/tmp.bif
-cp {template}/AA-whitford09.free.b temp.bifsif/tmp.b
+sed "s/PARM_C_D/1.2/g;s/PARM_P_BB/1.0/g;s/PARM_P_SC/1.0/g;s/PARM_N_BB/1.0/g;s/PARM_N_SC/2.0/g;s/CUTDIST/5.0/g;s/SCM_R/1.4/g;s/SCM_BR/0.5/g;s/MINVERSION/2.4.5/g" {template}/AA-test.shadow.free.sif > temp.bifsif/tmp.sif
+sed "s/PARM_MASS/0.2/g;s/PARM_chargeNB/-1/g;s/PARM_C6_2/1E-6/g;s/PARM_C12_2/3E-9/g;s/PARM_C12/{c12_nb1:.12g}/g" {template}/AA-test.free.nb > temp.bifsif/tmp.nb
+cp {template}/AA-test.free.bif temp.bifsif/tmp.bif
+cp {template}/AA-test.free.b temp.bifsif/tmp.b
 cp {template}/extras temp.bifsif/test.extras
 """
 
