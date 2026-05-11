@@ -153,6 +153,14 @@ For `model.xml`, the comparator similarly ignores only the generated XML
 comment block before the `<OpenSMOGforces>` root element. All OpenSMOG force
 elements, interaction ordering, and parameter values remain strict.
 
+Current official-image caveat: `smogserver/smog2:stable` reports SMOG v2.4.5
+and cannot generate baselines for SMOG-CHECK cases 104 and 110-113 from this
+repo's current testlist/templates. The image lacks the newer custom/pcos/ncos
+dihedral function support needed by those templates, and `-warn -1` still exits
+before complete baseline outputs are written. The parity runner leaves those
+as `BASELINE_ERROR`; it does not mark them as passing or compare them against
+candidate files.
+
 You can also run comparator directly:
 
 ```bash

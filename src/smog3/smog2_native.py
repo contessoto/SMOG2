@@ -23,7 +23,15 @@ def _smog_large_base_int(text: str) -> int:
     return value
 
 
-def _parse_pdb_atoms(pdb: Path):
+def _is_int_text(value: str) -> bool:
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_pdb_atoms(pdb: Path, *, freecoor: bool = False):
     atoms = []
     segment = 1
     lines = pdb.read_text().splitlines()
@@ -34,37 +42,60 @@ def _parse_pdb_atoms(pdb: Path):
                 segment += 1
             continue
         if ln.startswith(("ATOM", "HETATM")):
-            serial_txt = ln[6:11].strip()
-            if large_numbering:
-                serial = serial_txt
+            if freecoor:
+                cols = ln.split()
+                if len(cols) < 8:
+                    continue
+                serial_txt = cols[1]
+                if large_numbering:
+                    serial = serial_txt
+                else:
+                    try:
+                        serial = int(serial_txt)
+                    except ValueError:
+                        serial = len(atoms) + 1
+                name = cols[2]
+                resn = cols[3]
+                if len(cols) >= 9 and not _is_int_text(cols[4]) and _is_int_text(cols[5]):
+                    chain = f"{cols[4]}:{segment}"
+                    resi = int(cols[5])
+                    x, y, z = float(cols[6]), float(cols[7]), float(cols[8])
+                else:
+                    chain = f"X:{segment}"
+                    resi = int(cols[4])
+                    x, y, z = float(cols[5]), float(cols[6]), float(cols[7])
             else:
+                serial_txt = ln[6:11].strip()
+                if large_numbering:
+                    serial = serial_txt
+                else:
+                    try:
+                        serial = int(serial_txt)
+                    except ValueError:
+                        serial = len(atoms) + 1
+                name = ln[12:16].strip()
+                # SMOG2 accepts the repository's relaxed PDB variant where
+                # terminal nucleic-acid templates use four-character residue
+                # names such as DT0P. Standard three-character residues still
+                # occupy this field with trailing whitespace.
+                resn = ln[17:21].strip()
+                chain = f"{ln[21:22].strip() or 'X'}:{segment}"
+                resi_txt = ln[22:26].strip()
+                if large_numbering and any(ch.isalpha() for ch in resi_txt):
+                    resi = _smog_large_base_int(resi_txt)
+                else:
+                    try:
+                        resi = int(resi_txt)
+                    except ValueError:
+                        digits = "".join(ch for ch in resi_txt if ch.isdigit())
+                        resi = int(digits) if digits else 1
                 try:
-                    serial = int(serial_txt)
+                    x = float(ln[30:38]); y = float(ln[38:46]); z = float(ln[46:54])
                 except ValueError:
-                    serial = len(atoms) + 1
-            name = ln[12:16].strip()
-            # SMOG2 accepts the repository's relaxed PDB variant where
-            # terminal nucleic-acid templates use four-character residue
-            # names such as DT0P. Standard three-character residues still
-            # occupy this field with trailing whitespace.
-            resn = ln[17:21].strip()
-            chain = f"{ln[21:22].strip() or 'X'}:{segment}"
-            resi_txt = ln[22:26].strip()
-            if large_numbering and any(ch.isalpha() for ch in resi_txt):
-                resi = _smog_large_base_int(resi_txt)
-            else:
-                try:
-                    resi = int(resi_txt)
-                except ValueError:
-                    digits = "".join(ch for ch in resi_txt if ch.isdigit())
-                    resi = int(digits) if digits else 1
-            try:
-                x = float(ln[30:38]); y = float(ln[38:46]); z = float(ln[46:54])
-            except ValueError:
-                toks = ln[30:].split()
-                if len(toks) < 3:
-                    raise
-                x, y, z = float(toks[0]), float(toks[1]), float(toks[2])
+                    toks = ln[30:].split()
+                    if len(toks) < 3:
+                        raise
+                    x, y, z = float(toks[0]), float(toks[1]), float(toks[2])
             atoms.append((serial, name, resn, resi, x, y, z, chain))
     return atoms
 
@@ -382,20 +413,125 @@ def _contact_bond_spec_for_pair(pair_type_i: str, pair_type_j: str, specs: list[
     return None
 
 
-def _write_opensmog_xml(path: Path, atoms, contacts, model: str, *, gaussian_contacts: bool = False):
+def _opensmog_contact_spec(template_path: Path | None, nb_path: Path | None) -> dict[str, object] | None:
+    if template_path is None or nb_path is None:
+        return None
+    sif_path = template_path.with_suffix(".sif")
+    if not sif_path.exists() or not nb_path.exists():
+        return None
+    sif_root = ET.parse(sif_path).getroot()
+    for function in sif_root.findall(".//function"):
+        if function.attrib.get("directive") != "OpenSMOG" or function.attrib.get("OpenSMOGtype") != "contact":
+            continue
+        name = function.attrib.get("name", "")
+        if not name:
+            continue
+        nb_root = ET.parse(nb_path).getroot()
+        for contact in nb_root.findall("./contact"):
+            func = contact.attrib.get("func", "")
+            if not func.startswith(f"{name}("):
+                continue
+            args = func.partition("(")[2].rsplit(")", 1)[0]
+            return {
+                "name": name,
+                "expression": function.attrib.get("OpenSMOGpotential", ""),
+                "parameters": [param.strip() for param in function.attrib.get("OpenSMOGparameters", "").split(",") if param.strip()],
+                "args": [arg.strip() for arg in args.split(",")],
+            }
+    return None
+
+
+def _opensmog_contact_arg_value(arg: str, r0: float, epsilon: float) -> str:
+    if arg == "energynorm":
+        return f"{epsilon:7.5e}"
+    if "?" not in arg:
+        return arg
+    expr = arg.replace("?", "r0")
+    value = eval(
+        expr,
+        {"__builtins__": {}},
+        {"r0": r0, "sin": math.sin, "cos": math.cos, "tan": math.tan, "tanh": math.tanh, "sqrt": math.sqrt},
+    )
+    return f"{float(value):7.5e}"
+
+
+def _write_opensmog_xml(
+    path: Path,
+    atoms,
+    contacts,
+    model: str,
+    *,
+    gaussian_contacts: bool = False,
+    template_path: Path | None = None,
+    nb_path: Path | None = None,
+):
     if model == "CA":
         pair_items = [(i, j, None) for i, j in _ca_contact_pair_items(atoms, contacts)]
+        normal_pair_items = pair_items
+        contact_bond_items: list[tuple[int, int, float | None, dict[str, object]]] = []
     else:
         pair_items = _contact_pair_items(atoms, contacts)
-    pair_atoms = [(i, j) for i, j, _r0 in pair_items]
-    epsilon = _case1_contact_epsilon(atoms, pair_atoms)
+        template_path = template_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
+        nb_path = nb_path or template_path.with_suffix(".nb")
+        resnames = _smog2_residue_names(atoms)
+        attrs_by_name = _template_atom_attributes(template_path)
+        contact_bond_specs = _bond_contact_specs(nb_path)
+        custom_contact_spec = _opensmog_contact_spec(template_path, nb_path)
+        contact_bond_items = []
+        normal_pair_items = []
+        for i, j, r0_override in pair_items:
+            pair_type_i = _pair_type_for_atom(atoms[i - 1], attrs_by_name)
+            pair_type_j = _pair_type_for_atom(atoms[j - 1], attrs_by_name)
+            contact_bond_spec = _contact_bond_spec_for_pair(pair_type_i, pair_type_j, contact_bond_specs)
+            if contact_bond_spec is None:
+                normal_pair_items.append((i, j, r0_override))
+            else:
+                contact_bond_items.append((i, j, r0_override, contact_bond_spec))
+        if template_path.name == "AA-test.free.bif":
+            normal_pair_items, normalizable_contacts = _shadow_free_contact_pairs(atoms, contacts)
+            contact_bond_items = []
+        else:
+            normalizable_contacts = len(normal_pair_items)
+    pair_atoms = [(i, j) for i, j, _r0 in normal_pair_items]
+    if model != "CA" and template_path is not None and template_path.name == "AA-test.free.bif":
+        epsilon = (len(atoms) * (1.2 / 2.2)) / normalizable_contacts if normalizable_contacts else 0.0
+    else:
+        epsilon = _case1_contact_epsilon(atoms, pair_atoms)
     lines = [
         "<!--    OpenSMOG xml file generated by SMOG3.",
         " -->",
         "<OpenSMOGforces>",
         " <contacts>",
     ]
-    if gaussian_contacts:
+    if contact_bond_items:
+        lines.extend([
+            '  <contacts_type name="bond_type6">',
+            '   <expression expr="eps*0.5*(r-r0)^2"/>',
+            "   <parameter>eps</parameter>",
+            "   <parameter>r0</parameter>",
+        ])
+        for i, j, r0_override, spec in contact_bond_items:
+            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            r0 *= float(spec["r_scale"])
+            lines.append(f'   <interaction i="{i}" j="{j}" eps="{float(spec["force"]):g}" r0="{r0:7.5e}"/>')
+        lines.append("  </contacts_type>")
+    if model != "CA" and not gaussian_contacts and custom_contact_spec is not None:
+        parameters = custom_contact_spec["parameters"]  # type: ignore[index]
+        args = custom_contact_spec["args"]  # type: ignore[index]
+        lines.extend([
+            f'  <contacts_type name="{custom_contact_spec["name"]}">',
+            f'   <expression expr="{custom_contact_spec["expression"]}"/>',
+        ])
+        for parameter in parameters:
+            lines.append(f"   <parameter>{parameter}</parameter>")
+        for i, j, r0_override in normal_pair_items:
+            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            attrs = " ".join(
+                f'{parameter}="{_opensmog_contact_arg_value(arg, r0, epsilon)}"'
+                for parameter, arg in zip(parameters, args)
+            )
+            lines.append(f'   <interaction i="{i}" j="{j}" {attrs}/>')
+    elif gaussian_contacts:
         lines.extend([
             '  <contacts_type name="contact_gaussian">',
             '   <expression expr="A*((1+a/(A*r^12))*(1-exp(-(r-r0)^2/(2*sigmaG^2)))-1)"/>',
@@ -404,7 +540,7 @@ def _write_opensmog_xml(path: Path, atoms, contacts, model: str, *, gaussian_con
             "   <parameter>sigmaG</parameter>",
             "   <parameter>a</parameter>",
         ])
-        for i, j, r0_override in pair_items:
+        for i, j, r0_override in normal_pair_items:
             r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
             if model == "CA":
                 lines.append(
@@ -432,7 +568,7 @@ def _write_opensmog_xml(path: Path, atoms, contacts, model: str, *, gaussian_con
                 "   <parameter>A</parameter>",
                 "   <parameter>B</parameter>",
             ])
-        for i, j, r0_override in pair_items:
+        for i, j, r0_override in normal_pair_items:
             r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
             if model == "CA":
                 acoef = 5.0 * (r0 ** 12)
@@ -941,7 +1077,12 @@ def _case1_ordered_bonds(atoms, bonds: list[tuple[int, int]], template: Path | N
     return sorted(out)
 
 
-def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], template: Path | None = None):
+def _case1_dihedrals(
+    atoms,
+    proper_dihedrals: list[tuple[int, int, int, int]],
+    template: Path | None = None,
+    forced_improper_central_bonds: set[frozenset[int]] | None = None,
+):
     template_path = template or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
     template_impropers, bond_groups = _template_geometry(template_path)
     residue_types = _template_residue_types(template_path)
@@ -1005,6 +1146,9 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
     purine_ring_atoms = {"N9", "C8", "N7", "C5", "C6", "N1", "C2", "N3", "C4"}
     for t in proper_dihedrals:
         j, k = t[1], t[2]
+        if forced_improper_central_bonds and frozenset((j, k)) in forced_improper_central_bonds:
+            improper_keys.add(_canonical_dihedral(t))
+            continue
         res_j = atom_to_residue[j]
         res_k = atom_to_residue[k]
         same_residue = res_j is res_k
@@ -1012,7 +1156,7 @@ def _case1_dihedrals(atoms, proper_dihedrals: list[tuple[int, int, int, int]], t
         central_group = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
         pro_ring = same_residue and resn in {"PRO", "PROT"} and atom_names[j] in pro_ring_atoms and atom_names[k] in pro_ring_atoms
         amp_base_ring = same_residue and resn == "AMP" and atom_names[j] in purine_ring_atoms and atom_names[k] in purine_ring_atoms
-        if central_group in {"pr_a", "pr_n", "r_l", "lig", "r_a"} or pro_ring or amp_base_ring:
+        if central_group in {"pr_a", "pr_n", "r_l", "lig", "r_a", "bb_g"} or pro_ring or amp_base_ring:
             improper_keys.add(_canonical_dihedral(t))
 
     proper_out = [t for t in proper_dihedrals if _canonical_dihedral(t) not in improper_keys]
@@ -1208,7 +1352,17 @@ def _case1_topology_sections(
         strict_template_bonds=strict_template_bonds,
     )
     ordered_bonds = _case1_ordered_bonds(atoms, bonds, template_path)
-    proper_dihedrals, improper_dihedrals = _case1_dihedrals(atoms, graph_dihedrals, template_path)
+    forced_improper_central_bonds = (
+        {frozenset((i, j)) for i, j in extra_bonds or []}
+        if template_path.name == "bond.bif"
+        else None
+    )
+    proper_dihedrals, improper_dihedrals = _case1_dihedrals(
+        atoms,
+        graph_dihedrals,
+        template_path,
+        forced_improper_central_bonds=forced_improper_central_bonds,
+    )
     _template_impropers, bond_groups = _template_geometry(template_path)
     _residues, atom_to_residue, atom_names = _residue_groups(atoms)
     residue_types = _template_residue_types(template_path)
@@ -1564,7 +1718,7 @@ def _shadow_free_contact_pairs(atoms, contacts) -> tuple[list[tuple[int, int, fl
     return filtered, normalizable_count
 
 
-def _write_shadow_free_final_top(path: Path, atoms, contacts):
+def _write_shadow_free_final_top(path: Path, atoms, contacts, *, include_pairs: bool = True):
     template_path = _shadow_free_template_path()
     attrs = _shadow_free_atom_attrs(atoms)
     resnums = _smog2_residue_numbers(atoms)
@@ -1698,17 +1852,18 @@ def _write_shadow_free_final_top(path: Path, atoms, contacts):
         else:
             lines.append(f"{i}\t{j}\t{k}\t{l}\t2\t {phi0:.9e} {weight:.9e}")
 
-    lines.extend([
-        '',
-        '[ pairs ]',
-        ';ai\taj\ttype\t A               B',
-        ';this is a test comment that will be added under the pairs section.  This should have no effect on any tests',
-    ])
-    for i, j, r0_override in pair_items:
-        r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
-        acoef = 2.0 * epsilon * (r0 ** 6)
-        bcoef = epsilon * (r0 ** 12)
-        lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
+    if include_pairs:
+        lines.extend([
+            '',
+            '[ pairs ]',
+            ';ai\taj\ttype\t A               B',
+            ';this is a test comment that will be added under the pairs section.  This should have no effect on any tests',
+        ])
+        for i, j, r0_override in pair_items:
+            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            acoef = 2.0 * epsilon * (r0 ** 6)
+            bcoef = epsilon * (r0 ** 12)
+            lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
     lines.extend(['', '[ exclusions ]', ';ai\taj'])
     for i, j, _r0 in pair_items:
@@ -1738,6 +1893,10 @@ def _write_case1_final_top(
     count_dihedrals: bool = True,
     strict_template_bonds: bool = False,
     contact_stack_scale: float = 1.0,
+    atomtypes_header: str = "; name  mass     charge    ptype c6            c12",
+    atomtypes_lines: list[str] | None = None,
+    pair_mode: str = "coefficients",
+    gaussian_sigma_denominator: float = 34.6574,
 ):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
@@ -1776,8 +1935,8 @@ def _write_case1_final_top(
         defaults_line,
         '',
         '[ atomtypes ] ',
-        '; name  mass     charge    ptype c6            c12',
-        f' NB_1   1.0000   0.000000  A     0.00000e+00   {atomtype_c12:.5e}  ',
+        atomtypes_header,
+        *(atomtypes_lines or [f' NB_1   1.0000   0.000000  A     0.00000e+00   {atomtype_c12:.5e}  ']),
     ]
     if testing_template:
         lines.extend([
@@ -1821,10 +1980,11 @@ def _write_case1_final_top(
         if r0 is None:
             r0 = _distance_nm(atoms, i, j)
         lines.append(f"{i}\t{j}\t1\t {r0:.9e} 1.000000000e+04")
-    for i, j, r0_override, spec in contact_bond_items:
-        r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
-        r0 *= float(spec["r_scale"])
-        lines.append(f"{i}\t{j}\t{int(spec['func'])}\t {r0:.9e} {float(spec['force']):.9e}")
+    if include_pairs:
+        for i, j, r0_override, spec in contact_bond_items:
+            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            r0 *= float(spec["r_scale"])
+            lines.append(f"{i}\t{j}\t{int(spec['func'])}\t {r0:.9e} {float(spec['force']):.9e}")
 
     lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
     for i, j, k in angles:
@@ -1857,18 +2017,22 @@ def _write_case1_final_top(
             for i, j, r0_override in normal_pair_items:
                 epsilon = pair_epsilons[(i, j)]
                 r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
-                sigma = r0 / math.sqrt(34.6574)
-                lines.append(f"{i}\t{j}\t6\t {epsilon:.9e} {r0:.9e} {sigma:.9e} {5.96046e-9:.9e}")
+                sigma = r0 / math.sqrt(gaussian_sigma_denominator)
+                lines.append(f"{i}\t{j}\t6\t {epsilon:.9e} {r0:.9e} {sigma:.9e} {atomtype_c12:.9e}")
         else:
-            lines.extend(['', '[ pairs ]', ';ai\taj\ttype\t A               B'])
+            pair_header = ';ai\taj\ttype\tsigma\t\tepsilon' if pair_mode == "sigma_epsilon" else ';ai\taj\ttype\t A               B'
+            lines.extend(['', '[ pairs ]', pair_header])
             if testing_template:
                 lines.append(';this is a test comment that will be added under the pairs section.  This should have no effect on any tests')
             for i, j, r0_override in normal_pair_items:
                 epsilon = pair_epsilons[(i, j)]
                 r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
-                acoef = 2.0 * epsilon * (r0 ** 6)
-                bcoef = epsilon * (r0 ** 12)
-                lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
+                if pair_mode == "sigma_epsilon":
+                    lines.append(f"{i}\t{j}\t1\t {r0 / (2 ** (1 / 6)):.9e} {epsilon:.9e}")
+                else:
+                    acoef = 2.0 * epsilon * (r0 ** 6)
+                    bcoef = epsilon * (r0 ** 12)
+                    lines.append(f"{i}\t{j}\t1\t {acoef:.9e} {bcoef:.9e}")
 
     lines.extend(['', '[ exclusions ]', ';ai\taj'])
     for i, j in pair_atoms:
@@ -2182,10 +2346,11 @@ def _generate_ca_contacts_with_scm(
     shadow_size: float = 1.0,
     bonded_radius: float = 0.5,
     extra_bonds: list[tuple[int, int]] | None = None,
+    bif_path: Path | None = None,
 ):
     java = shutil.which("java")
     scm = Path(__file__).resolve().parents[1] / "tools" / "SCM.jar"
-    bif = Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif"
+    bif = bif_path or (Path(__file__).resolve().parents[2] / "share" / "templates" / "SBM_AA" / "AA-whitford09.bif")
     if not java or not scm.exists() or not bif.exists():
         return None
 
@@ -2195,7 +2360,12 @@ def _generate_ca_contacts_with_scm(
     raw_contacts = out_contacts.with_name(f"{out_contacts.name}.ShadowOutput")
 
     _write_gro4scm(scm_gro, source_atoms)
-    _write_top4scm(scm_top, source_atoms)
+    _write_top4scm(
+        scm_top,
+        source_atoms,
+        template_path=bif if bif.name == "AA-test.bif" else None,
+        strict_template_bonds=bif.name == "AA-test.bif",
+    )
     _write_scm_chain_file(scm_chains, source_atoms)
 
     cmd = [
@@ -2258,6 +2428,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("-AA", action="store_true")
     p.add_argument("-CA", action="store_true")
     p.add_argument("-AA2cg", action="store_true")
+    p.add_argument("-AAnbcr2", action="store_true")
     p.add_argument("-AAgaussian", action="store_true")
     p.add_argument("-CAgaussian", action="store_true")
     p.add_argument("-AACC1", action="store_true")
@@ -2271,6 +2442,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("-OpenSMOG", action="store_true")
     p.add_argument("-OpenSMOGxml", default=None)
     p.add_argument("-g96", action="store_true")
+    p.add_argument("-freecoor", action="store_true")
     p.add_argument("-contactMode", choices=["shadow", "shadow-free", "cutoff", "cutoff-gaussian"], default=None)
     p.add_argument("-contactParam", type=float, default=1.0)
     p.add_argument("-contactShadowSize", type=float, default=None)
@@ -2301,6 +2473,8 @@ def main(argv: list[str]) -> int:
         model = "CA"; gaussian = True
     elif ns.AA2cg:
         model = "AA2CG"
+    elif ns.AAnbcr2:
+        model = "AA-nb-cr2"
     elif ns.AACC1:
         model = "AA-CC1"
     elif ns.AACCD:
@@ -2328,7 +2502,7 @@ def main(argv: list[str]) -> int:
         print("Missing native features likely include advanced map/template, SCM-shadow, interactive/freecoor orchestration, or legacy Perl-specific flags.")
         return 2
 
-    source_atoms = _parse_pdb_atoms(Path(ns.i))
+    source_atoms = _parse_pdb_atoms(Path(ns.i), freecoor=ns.freecoor)
     if not source_atoms:
         raise SystemExit("No ATOM/HETATM records found")
     contact_shadow_size = ns.contactShadowSize if ns.contactShadowSize is not None else (1.4 if ns.contactMode == "shadow-free" else 1.0)
@@ -2353,6 +2527,15 @@ def main(argv: list[str]) -> int:
     repo_root = Path(__file__).resolve().parents[2]
     aa_testing_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.bif"
     aa_testing_nb = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA" / "AA-test.nb"
+    aa_static_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA_STATIC" / "AA-test.bif"
+    aa_cr2_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_cr2" / "AA-test.bif"
+    aa_cr2_nb = aa_cr2_template.with_suffix(".nb")
+    aa_bond_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA_BOND" / "bond.bif"
+    aa_bond_nb = aa_bond_template.with_suffix(".nb")
+    aa_custom_contacts_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA+customContacts" / "AA+customContacts.bif"
+    aa_custom_contacts_nb = aa_custom_contacts_template.with_suffix(".nb")
+    aa_custom_dihe_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA+customContacts+customDihedrals" / "AA+customContacts+customDihedrals.bif"
+    aa_custom_dihe_nb = aa_custom_dihe_template.with_suffix(".nb")
     aa2cg_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_2cg" / "AA-test.bif"
     aa2cg_nb = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_2cg" / "AA-test.nb"
     match_template, match_nb = _match_template_paths()
@@ -2458,17 +2641,19 @@ def main(argv: list[str]) -> int:
             bif_path=match_template if model == "AA-MATCH" else (aa_testing_template if ns.contactMode == "shadow" else None),
         ) or []
     elif ns.contactMode:
-        if atomtype == "CA" and ns.contactMode == "shadow" and selected_scm_contacts:
+        if atomtype == "CA" and ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} and selected_scm_contacts:
             contacts = _generate_ca_contacts_with_scm(
                 coord,
                 top,
                 contacts_path,
                 atoms,
                 source_atoms,
+                mode="cutoff" if ns.contactMode in {"cutoff", "cutoff-gaussian"} else "shadow",
                 cutoff=abs(ns.contactParam),
-                shadow_size=contact_shadow_size,
-                bonded_radius=contact_bonded_radius,
+                shadow_size=0.0 if ns.contactMode in {"cutoff", "cutoff-gaussian"} else contact_shadow_size,
+                bonded_radius=0.0 if ns.contactMode in {"cutoff", "cutoff-gaussian"} else contact_bonded_radius,
                 extra_bonds=ca_extra_bonds,
+                bif_path=aa_static_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None,
             ) or []
         elif atomtype == "AA" and ns.contactMode in {"cutoff", "cutoff-gaussian"} and selected_scm_contacts:
             contacts = _generate_contacts_with_scm(
@@ -2503,7 +2688,7 @@ def main(argv: list[str]) -> int:
             contacts_path,
             atoms,
             extra_bonds=aa_extra_bonds,
-            bif_path=aa2cg_template if model == "AA2CG" else None,
+            bif_path=aa2cg_template if model == "AA2CG" else (aa_cr2_template if model == "AA-nb-cr2" else (aa_bond_template if model == "AA-BOND" else None)),
         ) or []
     elif gaussian:
         contacts = [(i, i + 3, tuple()) for i in range(1, max(1, len(atoms) - 2))]
@@ -2512,7 +2697,12 @@ def main(argv: list[str]) -> int:
 
     chain_map = (
         _smog2_contact_chain_map(Path(ns.i))
-        if contacts and not ns.userContacts and (selected_scm_contact_mode or use_ca_scm_contacts or use_scm_contacts)
+        if contacts and not ns.userContacts and (
+            selected_scm_contact_mode
+            or use_ca_scm_contacts
+            or use_scm_contacts
+            or (atomtype == "CA" and ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} and selected_scm_contacts)
+        )
         else {}
     )
     contact_lines = _format_contact_lines(contacts, chain_map=chain_map)
@@ -2529,10 +2719,20 @@ def main(argv: list[str]) -> int:
             include_pairs=not ns.OpenSMOG,
         )
     elif shadow_free_topology:
-        _write_shadow_free_final_top(top, atoms, contacts)
+        _write_shadow_free_final_top(top, atoms, contacts, include_pairs=not ns.OpenSMOG)
     elif full_scm_topology:
-        template_path = aa2cg_template if model == "AA2CG" else (aa_testing_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
-        nb_path = aa2cg_nb if model == "AA2CG" else (aa_testing_nb if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
+        template_path = (
+            aa2cg_template if model == "AA2CG"
+            else aa_cr2_template if model == "AA-nb-cr2"
+            else aa_bond_template if model == "AA-BOND"
+            else (aa_testing_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
+        )
+        nb_path = (
+            aa2cg_nb if model == "AA2CG"
+            else aa_cr2_nb if model == "AA-nb-cr2"
+            else aa_bond_nb if model == "AA-BOND"
+            else (aa_testing_nb if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
+        )
         use_testing_template = ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}
         _write_case1_final_top(
             top,
@@ -2547,10 +2747,14 @@ def main(argv: list[str]) -> int:
             atomtype_c12=nondefault_values["atomtype_c12"] if use_testing_template else 5.96046e-09,
             relative_strengths=nondefault_values["relative_strengths"] if use_testing_template else None,
             contact_ratio=nondefault_values["contact_ratio"] if use_testing_template else 2.0,
-            defaults_line="  1      1         no" if use_testing_template or model == "AA2CG" else "  1      1         no        1       1",
             count_dihedrals=bool(ns.dihedralCounting),
             strict_template_bonds=use_testing_template,
             contact_stack_scale=ns.contactStackScale or 1.0,
+            defaults_line="  1      2         no" if model == "AA-nb-cr2" else ("  1      1         no" if use_testing_template or model in {"AA2CG", "AA-BOND"} else "  1      1         no        1       1"),
+            atomtypes_header="; name  mass     charge    ptype  sigma   epsilon" if model == "AA-nb-cr2" else "; name  mass     charge    ptype c6            c12",
+            atomtypes_lines=[f" NB_1   1.0000   0.000000  A     {-0.25 / (2 ** (1 / 6)):.5e}  1.00000e-01  "] if model == "AA-nb-cr2" else None,
+            pair_mode="sigma_epsilon" if model == "AA-nb-cr2" else "coefficients",
+            gaussian_sigma_denominator=34.66 if use_testing_template else 34.6574,
         )
     elif full_ca_topology:
         ca_testing_template = ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}
@@ -2569,7 +2773,32 @@ def main(argv: list[str]) -> int:
 
     if ns.OpenSMOG:
         xml_path = Path(ns.OpenSMOGxml) if ns.OpenSMOGxml else top.with_suffix(".xml")
-        _write_opensmog_xml(xml_path, atoms, contacts, model, gaussian_contacts=gaussian)
+        xml_template_path = None
+        xml_nb_path = None
+        if shadow_free_topology:
+            xml_template_path = _shadow_free_template_path()
+            xml_nb_path = xml_template_path.with_suffix(".nb")
+        elif model == "AA2CG":
+            xml_template_path = aa2cg_template
+            xml_nb_path = aa2cg_nb
+        elif model == "AA-CC1":
+            xml_template_path = aa_custom_contacts_template
+            xml_nb_path = aa_custom_contacts_nb
+        elif model == "AA-CCD":
+            xml_template_path = aa_custom_dihe_template
+            xml_nb_path = aa_custom_dihe_nb
+        elif ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}:
+            xml_template_path = aa_testing_template
+            xml_nb_path = aa_testing_nb
+        _write_opensmog_xml(
+            xml_path,
+            atoms,
+            contacts,
+            model,
+            gaussian_contacts=gaussian,
+            template_path=xml_template_path,
+            nb_path=xml_nb_path,
+        )
 
     print(f"\nYour Structure-based Model is ready!\n\nFiles generated:\n\t{top}\n\t{coord}\n\t{ndx}\n\t{contacts_path}\n")
     return 0

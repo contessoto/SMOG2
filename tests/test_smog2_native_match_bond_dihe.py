@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from smog3 import smog2_native
+
 def _count_ndx_atoms(path: Path) -> int:
     return sum(
         len(line.split())
@@ -60,3 +62,24 @@ def test_match_bond_dihe_group_runs_native_without_perl(monkeypatch, tmp_path: P
             assert len(crows) > 0
 
     assert called["perl"] is False
+
+
+def test_aa_bond_glycan_dihedrals_are_harmonic_type2():
+    root = Path(__file__).resolve().parents[1]
+    pdb = root / "SMOG-CHECK" / "share" / "PDB.files" / "glycans.BOND.pdb"
+    template = root / "SMOG-CHECK" / "share" / "templates" / "SBM_AA_BOND" / "bond.bif"
+    atoms = smog2_native._parse_pdb_atoms(pdb)
+    bonds, _angles, dihedrals = smog2_native._case1_topology_sections(
+        atoms,
+        smog2_native._aa_user_bonds_from_pdb(pdb, atoms),
+        template_path=template,
+    )
+
+    assert len(bonds) == 15675
+    assert len(dihedrals) == 44829
+    assert sum(1 for row in dihedrals if row[4] == 1) == 29346
+    assert sum(1 for row in dihedrals if row[4] == 2) == 15483
+    assert (27, 29, 12277, 12279, 2, 56.42485397, 20.0, None) in [
+        (i, j, k, l, func, round(phi0, 8), weight, mult)
+        for i, j, k, l, func, phi0, weight, mult in dihedrals
+    ]

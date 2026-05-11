@@ -32,5 +32,15 @@ def test_unsupported_cases_are_classified_by_feature_group():
     assert smogcheck_parity.feature_group(cases[41]) == "CA coarse-graining"
     assert smogcheck_parity._supported(cases[53])[0] is True
     assert smogcheck_parity.feature_group(cases[53]) == "template/map variants"
-    assert smogcheck_parity._supported(cases[114])[0] is False
+    assert smogcheck_parity._supported(cases[114])[0] is True
     assert smogcheck_parity.feature_group(cases[114]) == "freecoor/interactive"
+
+
+def test_interactive_cases_use_reproducible_equivalent_model_flags():
+    cases = {case.case_id: case for case in smogcheck_parity.parse_testlist()}
+    out = smogcheck_parity.ROOT / "parity_runs" / "unit" / "interactive"
+
+    assert smogcheck_parity._baseline_model_flags(cases[114]) == ["-AA"]
+    assert smogcheck_parity._candidate_args(cases[114], out)[-1] == "-AA"  # type: ignore[index]
+    assert smogcheck_parity._baseline_model_flags(cases[115]) == ["-CA"]
+    assert smogcheck_parity._candidate_args(cases[115], out)[-1] == "-CA"  # type: ignore[index]

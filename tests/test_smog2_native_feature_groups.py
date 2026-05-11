@@ -101,7 +101,12 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
         assert contacts_node is not None
         contacts_type = contacts_node.find("contacts_type")
         assert contacts_type is not None
-        assert contacts_type.attrib["name"] in {"contact_1-6-12", "contact_1-10-12", "contact_gaussian"}
+        assert contacts_type.attrib["name"] in {
+            "contact_1-6-12",
+            "contact_1-10-12",
+            "contact_custom1",
+            "contact_gaussian",
+        }
         assert contacts_type.find("expression") is not None
 
     assert called["perl"] is False

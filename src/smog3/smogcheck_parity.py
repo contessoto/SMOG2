@@ -34,12 +34,15 @@ MODEL_FLAGS = {
     ("CA", False): ["-CA"],
     ("CA", True): ["-CAgaussian"],
     ("AA-2cg", False): ["-AA2cg"],
+    ("AA-nb-cr2", False): ["-AAnbcr2"],
     ("AA-CC1", False): ["-AACC1"],
     ("AA-CCD", False): ["-AACCD"],
     ("AA-BOND", False): ["-AABOND"],
     ("AA-DIHE", False): ["-AADIHE"],
     ("AA-DIHE4", False): ["-AADIHE4"],
     ("AA-match", False): ["-AAMATCH"],
+    ("AA-interactive", False): ["-AA"],
+    ("CA-interactive", False): ["-CA"],
 }
 
 BASELINE_TEMPLATE_FLAGS = {
@@ -151,6 +154,8 @@ def _model_flags(case: SmogcheckCase) -> list[str] | None:
 
 
 def _baseline_model_flags(case: SmogcheckCase) -> list[str] | None:
+    if case.interactive:
+        return _model_flags(case)
     if case.contact_model in {"shadow", "shadow-free", "cutoff", "cutoff-gaussian"}:
         if case.model == "AA":
             return ["-t", "temp.bifsif/"]
@@ -326,12 +331,6 @@ sed "s/GENPAIRS/{genpairs}/g;s/FUDGELJ/{fudgelj}/g;s/FUDGEQQ/{fudgeqq}/g" {templ
 
 
 def _supported(case: SmogcheckCase) -> tuple[bool, str]:
-    if case.interactive:
-        return False, "interactive prompt workflow is not implemented natively"
-    if case.freecoor:
-        return False, "freecoor input normalization is not implemented natively"
-    if case.model == "AA-nb-cr2":
-        return False, "AA-nb-cr2 template is not implemented natively"
     if _model_flags(case) is None:
         return False, f"model {case.model} is not implemented natively"
     return True, ""
@@ -369,6 +368,8 @@ def _baseline_args(case: SmogcheckCase, outdir: Path) -> list[str] | None:
     ]
     if case.opensmog:
         args.extend(["-OpenSMOG", "-OpenSMOGxml", f"/workdir/{_rel(outdir / 'model.xml')}"])
+    if case.freecoor:
+        args.append("-freecoor")
     args.extend(flags)
     if case.user_contacts:
         args.extend(["-c", f"/workdir/SMOG-CHECK/share/PDB.files/{case.stem}.contacts"])
@@ -396,6 +397,8 @@ def _candidate_args(case: SmogcheckCase, outdir: Path) -> list[str] | None:
     ]
     if case.opensmog:
         args.extend(["-OpenSMOG", "-OpenSMOGxml", _rel(outdir / "model.xml")])
+    if case.freecoor:
+        args.append("-freecoor")
     args.extend(flags)
     if case.user_contacts:
         args.extend(["-c", f"SMOG-CHECK/share/PDB.files/{case.stem}.contacts"])
@@ -445,12 +448,16 @@ def _run_baseline(case: SmogcheckCase, outdir: Path, image: str) -> tuple[int, s
     if args is None:
         return 99, "unsupported baseline argument mapping", []
     setup = _baseline_setup(case)
+    command = _shell_join(args)
+    if case.interactive:
+        choice = "2" if case.model == "CA-interactive" else "0"
+        command = f"printf '%s\\n' {subprocess.list2cmdline([choice])} | {command}"
     script = f"""
 set -euo pipefail
 cd /workdir
 cd {_rel(outdir)}
 {setup}
-    {_shell_join(args)}
+    {command}
 """
     proc = subprocess.run(
         ["docker", "run", "--rm", "-v", f"{ROOT}:/workdir", image, "bash", "-lc", script],
