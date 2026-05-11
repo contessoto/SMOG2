@@ -63,6 +63,10 @@ Install the alpha package from TestPyPI with:
 
 >python3 -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ smog3
 
+After installation, check the command-line entry point with:
+
+>smog3 --help
+
 The TestPyPI package exposes `smog3` as the main Python-native runtime command
 and `smog3-parity-direct` for direct comparator diagnostics.  It intentionally
 does not expose a default public `smog2` command; drop-in SMOG-CHECK testing
