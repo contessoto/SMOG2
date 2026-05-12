@@ -22,8 +22,9 @@ def test_tutorial_manifest_has_representative_implemented_cases() -> None:
     }:
         assert cases[case_id].implemented
 
-    assert any(case.status == "missing_input" for case in cases.values())
+    assert any(case.status == "manual_input_required" for case in cases.values())
     assert any(case.status == "not_generation_test" for case in cases.values())
+    assert "MISSING_DOWNLOAD" in tutorial_validation.ALL_STATUSES
 
 
 def test_tutorial_opensmog_cases_use_supported_xml_flags() -> None:

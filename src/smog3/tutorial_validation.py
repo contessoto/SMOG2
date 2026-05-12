@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -32,6 +33,8 @@ ALL_STATUSES = (
     "SMOG2_ERROR",
     "SMOG3_ERROR",
     "MISSING_INPUT",
+    "MISSING_DOWNLOAD",
+    "MANUAL_INPUT_REQUIRED",
     "UNSUPPORTED_BY_SMOG3",
     "NOT_GENERATION_TEST",
 )
@@ -348,6 +351,21 @@ def _preclassified_report(case: TutorialCase, status: str, reports_dir: Path, re
     return report
 
 
+def _missing_status(missing: list[str]) -> str:
+    for item in missing:
+        if item.startswith("validation/tutorials/assets/"):
+            return "MISSING_DOWNLOAD"
+    return "MISSING_INPUT"
+
+
+def _generation_outputs_exist(directory: Path, outputs: list[str]) -> bool:
+    # SMOG2 consumes user-provided contact files into the topology and does not
+    # always emit model.contacts.  For one-sided generation checks, require the
+    # structural outputs and treat model.contacts as optional.
+    required = [name for name in outputs if name != "model.contacts"]
+    return all((directory / name).exists() for name in required)
+
+
 def _run_case(
     case: TutorialCase,
     run_root: Path,
@@ -355,6 +373,7 @@ def _run_case(
     use_installed: bool,
     with_smog2_baseline: bool,
     smog3_only: bool,
+    smog2_only: bool,
     no_perl_bin: Path,
     perl_log: Path,
 ) -> dict[str, Any]:
@@ -368,28 +387,40 @@ def _run_case(
     candidate_dir.mkdir(parents=True, exist_ok=True)
     context, missing = _copy_inputs(case, run_root / "inputs")
     if missing:
-        return _preclassified_report(case, "MISSING_INPUT", reports_dir, reason="Missing files: " + ", ".join(missing))
+        return _preclassified_report(case, _missing_status(missing), reports_dir, reason="Missing files: " + ", ".join(missing))
 
     brc = 0
     bout = ""
     bargs: list[str] | None = None
+    logs_dir = run_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     if with_smog2_baseline and not smog3_only:
         brc, bout, bargs = _run_smog2(case, context, baseline_dir, image)
         (baseline_dir / "smog2.log").write_text(bout, encoding="utf-8", errors="replace")
+        (logs_dir / f"{case.case_id}.smog2.log").write_text(bout, encoding="utf-8", errors="replace")
     else:
         bargs = None
 
-    crc, cout, cargs = _run_smog3(case, context, candidate_dir, use_installed, no_perl_bin, perl_log)
-    (candidate_dir / "smog3.log").write_text(cout, encoding="utf-8", errors="replace")
+    crc: int | None = None
+    cout = ""
+    cargs: list[str] | None = None
+    if not smog2_only:
+        crc, cout, cargs = _run_smog3(case, context, candidate_dir, use_installed, no_perl_bin, perl_log)
+        (candidate_dir / "smog3.log").write_text(cout, encoding="utf-8", errors="replace")
+        (logs_dir / f"{case.case_id}.smog3.log").write_text(cout, encoding="utf-8", errors="replace")
 
     if brc != 0:
         status = "SMOG2_ERROR"
         comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs)
+    elif smog2_only:
+        generated = _generation_outputs_exist(baseline_dir, case.expected_outputs)
+        status = "PASS" if generated else "SMOG2_ERROR"
+        comparison = {"ok": generated, "mode": "smog2_only_generation_check", "comparisons": {}}
     elif crc != 0:
         status = "SMOG3_ERROR"
         comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs)
     elif smog3_only or not with_smog2_baseline:
-        generated = all((candidate_dir / name).exists() for name in case.expected_outputs)
+        generated = _generation_outputs_exist(candidate_dir, case.expected_outputs)
         status = "PASS" if generated else "SMOG3_ERROR"
         comparison = {"ok": generated, "mode": "smog3_only_generation_check", "comparisons": {}}
     else:
@@ -477,8 +508,12 @@ def _write_summary(run_root: Path, reports: list[dict[str, Any]], image: str, pe
             for report in reports
         ],
     }
-    (run_root / "tutorial_validation_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    (run_root / "tutorial_validation_summary.md").write_text(_render_summary(summary), encoding="utf-8")
+    summary_json = json.dumps(summary, indent=2) + "\n"
+    summary_md = _render_summary(summary)
+    (run_root / "tutorial_validation_summary.json").write_text(summary_json, encoding="utf-8")
+    (run_root / "tutorial_validation_summary.md").write_text(summary_md, encoding="utf-8")
+    (run_root / "tutorial_compare_summary.json").write_text(summary_json, encoding="utf-8")
+    (run_root / "tutorial_compare_summary.md").write_text(summary_md, encoding="utf-8")
     return summary
 
 
@@ -506,9 +541,12 @@ def _new_run_root(base: Path) -> Path:
 
 
 def run_validation(ns: argparse.Namespace) -> int:
+    if ns.download_first:
+        fetch_script = ROOT / "scripts" / "fetch_smog_tutorial_assets.py"
+        subprocess.run([sys.executable, str(fetch_script)], cwd=ROOT, check=True)
     cases = _select_cases(tutorial_cases(Path(ns.manifest)), ns)
     run_root = Path(ns.out_dir) if ns.out_dir else _new_run_root(Path(ns.run_root))
-    for subdir in ("inputs", "smog2_baseline", "smog3_candidate", "reports"):
+    for subdir in ("inputs", "smog2_baseline", "smog3_candidate", "logs", "reports"):
         (run_root / subdir).mkdir(parents=True, exist_ok=True)
     no_perl_bin = run_root / "no-perl-bin"
     perl_log = run_root / "smog3-perl-invocations.log"
@@ -525,6 +563,7 @@ def run_validation(ns: argparse.Namespace) -> int:
             ns.use_installed_smog3,
             ns.with_smog2_baseline,
             ns.smog3_only,
+            ns.smog2_only,
             no_perl_bin,
             perl_log,
         )
@@ -558,6 +597,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--use-installed-smog3", action="store_true")
     parser.add_argument("--with-smog2-baseline", action="store_true", default=True)
     parser.add_argument("--smog3-only", action="store_true")
+    parser.add_argument("--smog2-only", action="store_true")
+    parser.add_argument("--download-first", action="store_true")
     parser.add_argument("--keep-going", action="store_true", default=True)
     ns = parser.parse_args(argv)
     if ns.list:

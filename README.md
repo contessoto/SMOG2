@@ -117,6 +117,17 @@ Docker baselines for representative public tutorial categories. It reports
 `PASS` only when `.top`, `.gro`/`.g96`, `.ndx`, `.contacts`, and `.xml` outputs
 match under the documented parity comparator policy.
 
+To index public tutorial pages and linked data files from the SMOG website:
+
+```bash
+python3 scripts/fetch_smog_tutorial_assets.py
+bash scripts/run_all_tutorials_compare.sh --all
+```
+
+Downloaded tutorial data is kept under `validation/tutorials/assets/` and is not
+committed. Cases whose public template/script workflow still needs explicit
+automation are reported as `MANUAL_INPUT_REQUIRED` rather than hidden.
+
 The validation outputs are written to ignored local directories such as
 `parity_runs/`, `smogcheck_dropin_runs/`, `real_pdb_validation/`, and
 `validation/tutorials/runs/`.

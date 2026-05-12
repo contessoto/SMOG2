@@ -8,6 +8,8 @@
 /smogcheck_dropin_runs/
 /table.xvg
 /validation/tutorials/runs/
+/validation/tutorials/assets/downloads/
+/validation/tutorials/assets/pages/
 /validation/tutorials/*_summary.json
 /validation/tutorials/*_summary.md
 /baseline_case1/

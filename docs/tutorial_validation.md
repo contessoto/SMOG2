@@ -2,6 +2,29 @@
 
 SMOG3 has a dedicated validation suite for the public SMOG tutorial/model categories listed at <https://smog-server.org/tutorials/>. This suite is separate from SMOG-CHECK: it is intended to make public-facing model examples reproducible against the official SMOG2 Docker image.
 
+## Download Public Tutorial Assets
+
+The repository does not commit downloaded tutorial inputs.  Fetch the public
+tutorial pages and small linked assets with:
+
+```bash
+python3 scripts/fetch_smog_tutorial_assets.py
+```
+
+The fetcher starts at <https://smog-server.org/tutorials/>, saves HTML pages,
+downloads small linked model-generation files, and writes an index:
+
+```text
+validation/tutorials/assets/
+  pages/
+  downloads/
+  manifest_raw.json
+```
+
+Files larger than 100 MB are skipped as `LARGE_FILE_SKIPPED`.  Downloaded pages
+and assets are ignored by git; the raw JSON index is kept so the crawl result can
+be inspected.
+
 ## What Is Tested
 
 The tutorial runner validates SMOG model-generation outputs:
@@ -29,39 +52,52 @@ The initial implemented tutorial panel uses local SMOG-CHECK inputs that corresp
 - C-alpha disulfide local model
 - all-atom user-contact/multiple-contact local model
 
-Tutorial categories that require additional public tutorial input bundles are present in the manifest and classified as `MISSING_INPUT` until those files are added.
+Tutorial categories that require additional public tutorial input bundles are present in the manifest and classified as `MISSING_DOWNLOAD` until those files are fetched, or `MANUAL_INPUT_REQUIRED` when the public tutorial uses custom template/script steps that have not yet been mapped to an automated SMOG3 command.
 
 ## Commands
 
 List manifest entries:
 
 ```bash
-bash scripts/run_tutorial_validation.sh --list
+bash scripts/run_all_tutorials_compare.sh --list
 ```
 
 Run implemented tutorial model-generation cases:
 
 ```bash
-bash scripts/run_tutorial_validation.sh
+bash scripts/run_all_tutorials_compare.sh
 ```
 
 Run every manifest entry, including `MISSING_INPUT` and `NOT_GENERATION_TEST` classifications:
 
 ```bash
-bash scripts/run_tutorial_validation.sh --all
+bash scripts/run_all_tutorials_compare.sh --all
 ```
 
 Run one case:
 
 ```bash
-bash scripts/run_tutorial_validation.sh --case standard_aa_ci2
+bash scripts/run_all_tutorials_compare.sh --case standard_aa_ci2
+```
+
+Fetch assets first, then run all manifest entries:
+
+```bash
+bash scripts/run_all_tutorials_compare.sh --all --download-first
+```
+
+Run only the official SMOG2 baseline side or only the SMOG3 side:
+
+```bash
+bash scripts/run_all_tutorials_compare.sh --case standard_aa_ci2 --smog2-only
+bash scripts/run_all_tutorials_compare.sh --case standard_aa_ci2 --smog3-only
 ```
 
 Run against an installed `smog3` command, such as the TestPyPI package:
 
 ```bash
 PATH="/tmp/smog3-tutorial-test/bin:$PATH" \
-bash scripts/run_tutorial_validation.sh --all --use-installed-smog3
+bash scripts/run_all_tutorials_compare.sh --all --use-installed-smog3
 ```
 
 ## Installed TestPyPI Workflow
@@ -75,8 +111,11 @@ python3 -m venv /tmp/smog3-tutorial-test
   smog3
 
 PATH="/tmp/smog3-tutorial-test/bin:$PATH" \
-bash scripts/run_tutorial_validation.sh --all --use-installed-smog3
+bash scripts/run_all_tutorials_compare.sh --all --use-installed-smog3
 ```
+
+The older `scripts/run_tutorial_validation.sh` wrapper is retained as a
+compatibility alias for the same Python runner.
 
 ## Reports
 
@@ -90,9 +129,28 @@ validation/tutorials/runs/<timestamp>/
   reports/<case_id>.json
   tutorial_validation_summary.json
   tutorial_validation_summary.md
+  tutorial_compare_summary.json
+  tutorial_compare_summary.md
 ```
 
 Per-case reports include command lines, return codes, file comparison results, topology section counts, contact counts, coordinate atom counts, XML parse status, and a first diff snippet when files differ.
+
+## Status Meanings
+
+- `PASS`: SMOG2 Docker and SMOG3 generated matching model-generation outputs
+  under the documented comparator policy, or the requested one-sided generation
+  check completed.
+- `DIFF`: both sides ran, but at least one compared output differed.
+- `SMOG2_ERROR`: the official Docker baseline command failed.
+- `SMOG3_ERROR`: the SMOG3 candidate command failed.
+- `MISSING_INPUT`: a required local checkout file is absent.
+- `MISSING_DOWNLOAD`: a required public tutorial asset has not been fetched.
+- `MANUAL_INPUT_REQUIRED`: public assets exist or are discoverable, but the
+  tutorial includes custom preprocessing/template/script choices that still need
+  explicit automated command mapping.
+- `NOT_GENERATION_TEST`: the tutorial is a simulation/checkpoint/minimization
+  workflow rather than a SMOG2 model-generation comparison.
+- `UNSUPPORTED_BY_SMOG3`: the tutorial maps to a known unsupported SMOG3 feature.
 
 ## Comparator Policy
 
