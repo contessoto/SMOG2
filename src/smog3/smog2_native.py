@@ -2681,14 +2681,21 @@ def main(argv: list[str]) -> int:
         and not ns.OpenSMOG
         and not gaussian
     )
-    selected_scm_contacts = os.environ.get("SMOG3_USE_SCM_DEFAULTS") == "1"
+    # The public SMOG3 command should generate real default AA contacts/topology
+    # without requiring an environment variable.  Explicit contact-mode parity
+    # paths still opt into Java SCM with SMOG3_USE_SCM_DEFAULTS=1, while
+    # SMOG3_USE_SCM_DEFAULTS=0 remains a developer escape hatch for the old
+    # lightweight structural smoke path.
+    scm_default_setting = os.environ.get("SMOG3_USE_SCM_DEFAULTS")
+    default_scm_contacts = scm_default_setting != "0"
+    selected_scm_contacts = scm_default_setting == "1"
     dropin_opensmog_v27 = ns.OpenSMOG and os.environ.get("SMOG3_DROPIN_OPENSMOG_V27") == "1"
     use_scm_contacts = (
         atomtype in {"AA", "AA2CG"}
         and not ns.g96
         and ns.contactMode is None
         and ns.userContacts is None
-        and (case1_scm_contacts or selected_scm_contacts or model == "AA2CG")
+        and (case1_scm_contacts or selected_scm_contacts or default_scm_contacts or model == "AA2CG")
     )
     use_ca_scm_contacts = (
         atomtype == "CA"
@@ -2703,12 +2710,13 @@ def main(argv: list[str]) -> int:
         and ns.userContacts is None
         and ns.contactMode in {"shadow", "shadow-free"}
     )
-    full_scm_topology = use_scm_contacts or (
-        selected_scm_contacts
+    user_contacts_full_topology = (
+        (selected_scm_contacts or default_scm_contacts)
         and atomtype == "AA"
         and not ns.g96
         and ns.userContacts is not None
-    ) or selected_scm_contact_mode or (
+    )
+    full_scm_topology = use_scm_contacts or user_contacts_full_topology or selected_scm_contact_mode or (
         atomtype in {"AA", "AA2CG"}
         and not ns.g96
         and ns.contactMode in {"cutoff", "cutoff-gaussian"}
@@ -2723,7 +2731,7 @@ def main(argv: list[str]) -> int:
         and not ns.g96
         and (ns.contactMode is None or ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"})
     )
-    include_chain_groups = use_scm_contacts or (
+    include_chain_groups = use_scm_contacts or user_contacts_full_topology or (
         selected_scm_contacts
         and atomtype == "AA"
         and not ns.g96
@@ -2837,7 +2845,9 @@ def main(argv: list[str]) -> int:
         else {}
     )
     contact_lines = _format_contact_lines(contacts, chain_map=chain_map)
-    if not (selected_scm_contacts and ns.userContacts) or os.environ.get("SMOG3_DROPIN_WRITE_USER_CONTACTS") == "1":
+    write_user_contact_file = os.environ.get("SMOG3_WRITE_USER_CONTACT_OUTPUT") == "1" or os.environ.get("SMOG3_DROPIN_WRITE_USER_CONTACTS") == "1"
+    write_contacts_file = not ns.userContacts or write_user_contact_file
+    if os.environ.get("SMOG3_SUPPRESS_USER_CONTACT_OUTPUT") != "1" and write_contacts_file:
         contacts_path.write_text("\n".join(contact_lines) + ("\n" if contact_lines else ""))
     if model == "AA-MATCH":
         _write_match_final_top(

@@ -22,6 +22,10 @@ wrapper that routes every SMOG-CHECK `smog2` call to Python SMOG3 code.
 
 ## Install From TestPyPI
 
+The next TestPyPI build prepared from this checkout is `0.1.0a2`. It includes
+the tutorial validation suite and the expanded `smog3 --help` text that shows
+OpenSMOG flags.
+
 ```bash
 python3 -m pip install \
   --index-url https://test.pypi.org/simple/ \
@@ -34,6 +38,9 @@ Verify the installed command:
 ```bash
 smog3 --help
 ```
+
+The help output lists the supported model flags and common generation options,
+including `-OpenSMOG -OpenSMOGxml model.xml`.
 
 ## Basic Usage
 
@@ -104,6 +111,11 @@ bash scripts/run_tutorial_validation.sh --all
 bash scripts/run_tutorial_validation.sh --case standard_aa_ci2
 bash scripts/run_tutorial_validation.sh --all --use-installed-smog3
 ```
+
+The tutorial suite compares SMOG3-generated output files against official SMOG2
+Docker baselines for representative public tutorial categories. It reports
+`PASS` only when `.top`, `.gro`/`.g96`, `.ndx`, `.contacts`, and `.xml` outputs
+match under the documented parity comparator policy.
 
 The validation outputs are written to ignored local directories such as
 `parity_runs/`, `smogcheck_dropin_runs/`, `real_pdb_validation/`, and

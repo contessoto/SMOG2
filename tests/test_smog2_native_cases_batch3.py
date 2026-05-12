@@ -86,10 +86,10 @@ def test_next_ten_direct_cases_use_native_without_perl(monkeypatch, tmp_path: Pa
         assert int(gro_lines[1].strip()) == pdb_atoms
         assert top_atoms == pdb_atoms
         assert ndx_atoms == pdb_atoms
-        assert top_bonds == max(0, pdb_atoms - 1)
+        assert top_bonds >= max(0, pdb_atoms - 1)
         assert top_molecules == 1
         assert pdb_residues >= 1
-        assert len(contact_lines) == 0
+        assert len(contact_lines) > 0
 
         for section in (
             "[ defaults ]",

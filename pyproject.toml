@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smog3"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Python-native successor runtime for SMOG2 structure-based model generation"
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.9"

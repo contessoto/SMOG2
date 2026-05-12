@@ -67,6 +67,6 @@ def test_next_five_direct_cases_use_native_without_perl(monkeypatch, tmp_path: P
             assert section in ttxt
 
         assert natoms_top == natoms_gro == natoms_ndx
-        assert contacts.read_text() == ""
+        assert len([line for line in contacts.read_text().splitlines() if line.strip()]) > 0
 
     assert called["perl"] is False

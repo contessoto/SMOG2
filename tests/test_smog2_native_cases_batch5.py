@@ -91,26 +91,27 @@ def test_user_contact_and_2cg_cases_use_native_without_perl(monkeypatch, tmp_pat
         pdb_res = len({(ln[21:22], ln[22:26].strip(), ln[26:27], ln[17:20].strip()) for ln in pdb.read_text().splitlines() if ln.startswith(("ATOM", "HETATM"))})
 
         assert _count_section(top_text, "atoms") == pdb_atoms
-        if atomtype == "AA2CG":
+        if atomtype == "AA2CG" or "-userContacts" in mode_args:
             assert _count_section(top_text, "bonds") > max(0, pdb_atoms - 1)
         else:
             assert _count_section(top_text, "bonds") == max(0, pdb_atoms - 1)
         assert _count_section(top_text, "molecules") == 1
         assert pdb_res >= 1
-        assert (" NB_1 " in top_text) if atomtype == "AA2CG" else (f" {atomtype} " in top_text)
+        assert (" NB_1 " in top_text) if (atomtype == "AA2CG" or "-userContacts" in mode_args) else (f" {atomtype} " in top_text)
 
         ndx_atoms = _count_ndx_atoms(ndx)
         assert ndx_atoms == pdb_atoms
         assert int(gro.read_text().splitlines()[1].strip()) == pdb_atoms
 
-        contact_rows = _read_contacts(contacts)
         if "-userContacts" in mode_args:
             src_rows = _read_contacts(userc)
-            assert contact_rows == src_rows
-            assert len(contact_rows) > 0
+            assert not contacts.exists()
+            assert _count_section(top_text, "pairs") == len(src_rows)
         elif atomtype == "AA2CG":
+            contact_rows = _read_contacts(contacts)
             assert len(contact_rows) > 0
         else:
+            contact_rows = _read_contacts(contacts)
             assert len(contact_rows) == 0
 
         for section in ("[ atoms ]", "[ bonds ]", "[ angles ]", "[ dihedrals ]", "[ pairs ]", "[ molecules ]"):

@@ -106,6 +106,7 @@ def test_g96_and_opensmog_groups_run_natively_without_perl(monkeypatch, tmp_path
             "contact_1-10-12",
             "contact_custom1",
             "contact_gaussian",
+            "bond_type6",
         }
         assert contacts_type.find("expression") is not None
 

@@ -60,4 +60,4 @@ def test_next_three_direct_cases_run_natively(tmp_path: Path):
         assert "[ bonds ]" in ttxt
         assert "[ molecules ]" in ttxt
         assert natoms_gro == natoms_top == natoms_ndx
-        assert contacts.read_text() == ""
+        assert len([line for line in contacts.read_text().splitlines() if line.strip()]) > 0
