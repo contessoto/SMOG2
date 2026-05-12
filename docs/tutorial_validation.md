@@ -54,6 +54,18 @@ The initial implemented tutorial panel uses local SMOG-CHECK inputs that corresp
 
 Tutorial categories that require additional public tutorial input bundles are present in the manifest and classified as `MISSING_DOWNLOAD` until those files are fetched, or `MANUAL_INPUT_REQUIRED` when the public tutorial uses custom template/script steps that have not yet been mapped to an automated SMOG3 command.
 
+Several public template-driven workflows are now automated directly from the
+downloaded tutorial steps files.  For these cases the runner copies the public
+`.bif`, `.sif`, `.b`, `.nb`, and `.extras` files into isolated SMOG2/SMOG3
+working directories, runs the tutorial `smog_adjustPDB` and `smog2 -t ...`
+commands in Docker for the baseline, and runs the translated Python-native
+SMOG3 workflow locally.  This covers the Coulomb, Debye-Huckel, custom contact,
+custom nonbonded, and multiple-contact-type OpenSMOG examples.  The C-alpha
+custom-nonbonded tutorial is also automated, but the official SMOG2 Docker
+baseline currently rejects the downloaded public `.sif` because of its
+`nbcutoff` attribute, so it is reported as `SMOG2_ERROR` rather than a SMOG3
+output difference.
+
 ## Commands
 
 List manifest entries:

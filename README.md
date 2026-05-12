@@ -127,6 +127,10 @@ bash scripts/run_all_tutorials_compare.sh --all
 Downloaded tutorial data is kept under `validation/tutorials/assets/` and is not
 committed. Cases whose public template/script workflow still needs explicit
 automation are reported as `MANUAL_INPUT_REQUIRED` rather than hidden.
+Template-driven public tutorials that now run end-to-end include Coulomb,
+Debye-Huckel, custom contacts, custom nonbonded parameters, and multiple native
+contact types.  The runner still compares SMOG2 Docker outputs to SMOG3 outputs
+instead of trusting file existence.
 
 The validation outputs are written to ignored local directories such as
 `parity_runs/`, `smogcheck_dropin_runs/`, `real_pdb_validation/`, and

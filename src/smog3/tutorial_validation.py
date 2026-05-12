@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .parity_direct import compare_existing_dirs
+from .parity_direct import _compare_file, compare_existing_dirs
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = ROOT / "validation" / "tutorials" / "tutorial_manifest.yml"
@@ -57,6 +57,10 @@ class TutorialCase:
     @property
     def implemented(self) -> bool:
         return self.status == "implemented"
+
+    @property
+    def workflow(self) -> bool:
+        return bool(self.raw.get("workflow_commands"))
 
     @property
     def expected_outputs(self) -> list[str]:
@@ -173,16 +177,16 @@ def _file_diagnostics(baseline_dir: Path, candidate_dir: Path, outputs: list[str
         }
         if left.exists() and right.exists() and left.read_bytes() != right.read_bytes():
             item["first_diff"] = _first_diff(left, right)
-        if name in {"model.gro", "model.g96"}:
+        if Path(name).suffix in {".gro", ".g96"}:
             item["baseline_atom_count"] = _coord_atom_count(left)
             item["candidate_atom_count"] = _coord_atom_count(right)
-        if name == "model.contacts":
+        if Path(name).suffix == ".contacts":
             item["baseline_contact_lines"] = _count_contacts(left)
             item["candidate_contact_lines"] = _count_contacts(right)
-        if name == "model.top":
+        if Path(name).suffix == ".top":
             item["baseline_section_counts"] = _topology_section_counts(left)
             item["candidate_section_counts"] = _topology_section_counts(right)
-        if name == "model.xml":
+        if Path(name).suffix == ".xml":
             item["baseline_xml"] = _xml_status(left)
             item["candidate_xml"] = _xml_status(right)
         diagnostics[name] = item
@@ -201,14 +205,7 @@ def _compare_outputs(baseline_dir: Path, candidate_dir: Path, outputs: list[str]
     for name in outputs:
         left = baseline_dir / name
         right = candidate_dir / name
-        if not left.exists() and not right.exists():
-            comparisons[name] = {"match": True, "ignored": "both files absent"}
-        elif not left.exists() or not right.exists():
-            comparisons[name] = {"match": False, "reason": "missing file"}
-        elif left.read_bytes() == right.read_bytes():
-            comparisons[name] = {"match": True}
-        else:
-            comparisons[name] = {"match": False, "diff": _first_diff(left, right, limit=120)}
+        comparisons[name] = _compare_file(left, right)
     return {
         "baseline_dir": str(baseline_dir),
         "candidate_dir": str(candidate_dir),
@@ -238,6 +235,25 @@ def _copy_inputs(case: TutorialCase, run_inputs: Path) -> tuple[dict[str, str], 
             context["user_contacts_docker"] = f"/workdir/{_rel(dst)}"
 
     return context, missing
+
+
+def _copy_workflow_inputs(case: TutorialCase, work_dir: Path) -> list[str]:
+    """Copy downloaded tutorial assets into an isolated workflow directory."""
+
+    missing: list[str] = []
+    mappings = case.raw.get("workflow_input_files") or [
+        {"source": rel, "dest": Path(str(rel)).name}
+        for rel in case.raw.get("required_input_files", [])
+    ]
+    for item in mappings:
+        source = ROOT / str(item["source"])
+        if not source.exists():
+            missing.append(str(item["source"]))
+            continue
+        dest = work_dir / str(item["dest"])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+    return missing
 
 
 def _expand_args(raw_args: list[str], context: dict[str, str], docker: bool) -> list[str]:
@@ -320,6 +336,61 @@ def _run_smog3(
     return proc.returncode, proc.stdout + proc.stderr, args
 
 
+def _workflow_adjust_command() -> str:
+    return (
+        "python3 -c 'from smog3.adjustpdb_native import main; "
+        "import sys; raise SystemExit(main(sys.argv[1:]))'"
+    )
+
+
+def _workflow_smog3_command(_use_installed: bool) -> str:
+    return "python3 -m smog3.smogcheck_dropin_smog2"
+
+
+def _workflow_candidate_command(command: str, use_installed: bool) -> str:
+    if command.startswith("smog_adjustPDB "):
+        return command.replace("smog_adjustPDB", _workflow_adjust_command(), 1)
+    if command.startswith("smog2 "):
+        return command.replace("smog2", _workflow_smog3_command(use_installed), 1)
+    return command
+
+
+def _run_workflow_smog2(case: TutorialCase, baseline_dir: Path, image: str) -> tuple[int, str, list[str]]:
+    commands = [str(cmd) for cmd in case.raw.get("workflow_commands", [])]
+    script = "set -euo pipefail\n" f"cd /workdir/{_rel(baseline_dir)}\n" + "\n".join(commands) + "\n"
+    proc = subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{ROOT}:/workdir", image, "bash", "-lc", script],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode, proc.stdout + proc.stderr, commands
+
+
+def _run_workflow_smog3(
+    case: TutorialCase,
+    candidate_dir: Path,
+    use_installed: bool,
+    no_perl_bin: Path,
+    perl_log: Path,
+) -> tuple[int, str, list[str]]:
+    commands = [_workflow_candidate_command(str(cmd), use_installed) for cmd in case.raw.get("workflow_commands", [])]
+    env = os.environ.copy()
+    env["PATH"] = f"{no_perl_bin}:{env.get('PATH', '')}"
+    env["SMOG3_LEGACY_PERL_FALLBACK"] = "0"
+    env["SMOG3_USE_SCM_DEFAULTS"] = "1"
+    env["SMOG3_PERL_SENTINEL_LOG"] = str(perl_log)
+    if not use_installed:
+        env["PYTHONPATH"] = f"{ROOT / 'src'}:{env.get('PYTHONPATH', '')}"
+    proc = subprocess.run(
+        ["bash", "-lc", "set -euo pipefail\n" + "\n".join(commands) + "\n"],
+        cwd=candidate_dir,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return proc.returncode, proc.stdout + proc.stderr, commands
+
+
 def _write_no_perl_sentinel(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     sentinel = path / "perl"
@@ -385,7 +456,11 @@ def _run_case(
     candidate_dir = run_root / "smog3_candidate" / case.case_id
     baseline_dir.mkdir(parents=True, exist_ok=True)
     candidate_dir.mkdir(parents=True, exist_ok=True)
-    context, missing = _copy_inputs(case, run_root / "inputs")
+    if case.workflow:
+        missing = _copy_workflow_inputs(case, baseline_dir) + _copy_workflow_inputs(case, candidate_dir)
+        context: dict[str, str] = {}
+    else:
+        context, missing = _copy_inputs(case, run_root / "inputs")
     if missing:
         return _preclassified_report(case, _missing_status(missing), reports_dir, reason="Missing files: " + ", ".join(missing))
 
@@ -395,7 +470,10 @@ def _run_case(
     logs_dir = run_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     if with_smog2_baseline and not smog3_only:
-        brc, bout, bargs = _run_smog2(case, context, baseline_dir, image)
+        if case.workflow:
+            brc, bout, bargs = _run_workflow_smog2(case, baseline_dir, image)
+        else:
+            brc, bout, bargs = _run_smog2(case, context, baseline_dir, image)
         (baseline_dir / "smog2.log").write_text(bout, encoding="utf-8", errors="replace")
         (logs_dir / f"{case.case_id}.smog2.log").write_text(bout, encoding="utf-8", errors="replace")
     else:
@@ -405,7 +483,10 @@ def _run_case(
     cout = ""
     cargs: list[str] | None = None
     if not smog2_only:
-        crc, cout, cargs = _run_smog3(case, context, candidate_dir, use_installed, no_perl_bin, perl_log)
+        if case.workflow:
+            crc, cout, cargs = _run_workflow_smog3(case, candidate_dir, use_installed, no_perl_bin, perl_log)
+        else:
+            crc, cout, cargs = _run_smog3(case, context, candidate_dir, use_installed, no_perl_bin, perl_log)
         (candidate_dir / "smog3.log").write_text(cout, encoding="utf-8", errors="replace")
         (logs_dir / f"{case.case_id}.smog3.log").write_text(cout, encoding="utf-8", errors="replace")
 

@@ -292,20 +292,47 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+coulomb.top",
+        "2ci2.OpenSMOG.AA+coulomb.gro",
+        "2ci2.OpenSMOG.AA+coulomb.ndx",
+        "2ci2.OpenSMOG.AA+coulomb.contacts",
+        "2ci2.OpenSMOG.AA+coulomb.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy.",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.nb"
+      ],
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/steps.OpenSMOG.AA+coulomb.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -o 2ci2.adjusted.pdb -removewater",
+        "smog2 -i 2ci2.adjusted.pdb -t SBM_AA+coulomb -OpenSMOG -dname 2ci2.OpenSMOG.AA+coulomb"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.b",
+          "dest": "SBM_AA+coulomb/SBM_AA+coulomb.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.bif",
+          "dest": "SBM_AA+coulomb/SBM_AA+coulomb.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.nb",
+          "dest": "SBM_AA+coulomb/SBM_AA+coulomb.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.sif",
+          "dest": "SBM_AA+coulomb/SBM_AA+coulomb.sif"
+        }
       ]
     },
     {
@@ -323,21 +350,48 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+DebyeHuckel.top",
+        "2ci2.OpenSMOG.AA+DebyeHuckel.gro",
+        "2ci2.OpenSMOG.AA+DebyeHuckel.ndx",
+        "2ci2.OpenSMOG.AA+DebyeHuckel.contacts",
+        "2ci2.OpenSMOG.AA+DebyeHuckel.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.nb"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/steps.OpenSMOG.AA+DebyeHuckel.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -o 2ci2.adjusted.pdb -removewater",
+        "smog2 -i 2ci2.adjusted.pdb -t SBM_AA+DebyeHuckel -OpenSMOG -dname 2ci2.OpenSMOG.AA+DebyeHuckel"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.b",
+          "dest": "SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.bif",
+          "dest": "SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.nb",
+          "dest": "SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+DebyeHuckel/SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.sif",
+          "dest": "SBM_AA+DebyeHuckel/SBM_AA+DebyeHuckel.sif"
+        }
+      ]
     },
     {
       "id": "aa_explicit_ions_coulomb_tutorial",
@@ -467,21 +521,48 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+customContacts.top",
+        "2ci2.OpenSMOG.AA+customContacts.gro",
+        "2ci2.OpenSMOG.AA+customContacts.ndx",
+        "2ci2.OpenSMOG.AA+customContacts.contacts",
+        "2ci2.OpenSMOG.AA+customContacts.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.nb"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/steps.OpenSMOG.AA+customContacts.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -removewater -o 2ci2.adjusted.pdb",
+        "smog2 -t SBM_AA+customContacts -i 2ci2.adjusted.pdb -opensmog -dname 2ci2.OpenSMOG.AA+customContacts"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.b",
+          "dest": "SBM_AA+customContacts/AA+customContacts.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.bif",
+          "dest": "SBM_AA+customContacts/AA+customContacts.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.nb",
+          "dest": "SBM_AA+customContacts/AA+customContacts.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customContacts/SBM_AA+customContacts/AA+customContacts.sif",
+          "dest": "SBM_AA+customContacts/AA+customContacts.sif"
+        }
+      ]
     },
     {
       "id": "aa_custom_nonbonded_heterogeneous_tutorial",
@@ -498,21 +579,52 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+customNonbonded.top",
+        "2ci2.OpenSMOG.AA+customNonbonded.gro",
+        "2ci2.OpenSMOG.AA+customNonbonded.ndx",
+        "2ci2.OpenSMOG.AA+customNonbonded.contacts",
+        "2ci2.OpenSMOG.AA+customNonbonded.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.nb"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/steps.OpenSMOG.AA+customNonbonded.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -removewater -o 2ci2.adjusted.pdb",
+        "smog2 -t SBM_AA+customNonbonded -i 2ci2.adjusted.pdb -opensmog -dname 2ci2.OpenSMOG.AA+customNonbonded"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.b",
+          "dest": "SBM_AA+customNonbonded/SBM_AA+customNonbonded.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.bif",
+          "dest": "SBM_AA+customNonbonded/SBM_AA+customNonbonded.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.nb",
+          "dest": "SBM_AA+customNonbonded/SBM_AA+customNonbonded.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.sif",
+          "dest": "SBM_AA+customNonbonded/SBM_AA+customNonbonded.sif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+customNonbonded/SBM_AA+customNonbonded/SBM_AA+customNonbonded.extras",
+          "dest": "SBM_AA+customNonbonded/SBM_AA+customNonbonded.extras"
+        }
+      ]
     },
     {
       "id": "ca_custom_nonbonded_tutorial",
@@ -529,21 +641,68 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.CA+customNonbonded.top",
+        "2ci2.OpenSMOG.CA+customNonbonded.gro",
+        "2ci2.OpenSMOG.CA+customNonbonded.ndx",
+        "2ci2.OpenSMOG.CA+customNonbonded.contacts",
+        "2ci2.OpenSMOG.CA+customNonbonded.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.nb"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/steps.OpenSMOG.CA+customNonbonded.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -removewater -o 2ci2.adjusted.pdb",
+        "smog2 -t SBM_AA -tCG SBM_CA+customNonbonded -i 2ci2.adjusted.pdb -opensmog -dname 2ci2.OpenSMOG.CA+customNonbonded"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_AA/AA-whitford09.b",
+          "dest": "SBM_AA/AA-whitford09.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_AA/AA-whitford09.bif",
+          "dest": "SBM_AA/AA-whitford09.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_AA/AA-whitford09.nb",
+          "dest": "SBM_AA/AA-whitford09.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_AA/AA-whitford09.sif",
+          "dest": "SBM_AA/AA-whitford09.sif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.b",
+          "dest": "SBM_CA+customNonbonded/CA+customContacts.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.bif",
+          "dest": "SBM_CA+customNonbonded/CA+customContacts.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.nb",
+          "dest": "SBM_CA+customNonbonded/CA+customContacts.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.sif",
+          "dest": "SBM_CA+customNonbonded/CA+customContacts.sif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/SBM_CA+customNonbonded/CA+customContacts.extras",
+          "dest": "SBM_CA+customNonbonded/CA+customContacts.extras"
+        }
+      ]
     },
     {
       "id": "large_system_fragment_tutorial",
@@ -653,15 +812,42 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.multipleContactTypes.top",
+        "2ci2.multipleContactTypes.gro",
+        "2ci2.multipleContactTypes.ndx",
+        "2ci2.multipleContactTypes.contacts",
+        "2ci2.multipleContactTypes.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
+      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/steps.OpenSMOG.AA+multipleContactTypes.txt",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -removewater -o 2ci2.adjusted.pdb",
+        "smog2 -i 2ci2.adjusted.pdb -t SBM_AA-multipleContactTypes -opensmog -dname 2ci2.multipleContactTypes"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.b",
+          "dest": "SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.bif",
+          "dest": "SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.nb",
+          "dest": "SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+multipleContactTypes/SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.sif",
+          "dest": "SBM_AA-multipleContactTypes/SBM_AA-multipleContactTypes.sif"
+        }
+      ]
     }
   ]
 }

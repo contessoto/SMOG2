@@ -48,10 +48,21 @@ def _has_model_flag(argv: list[str]) -> bool:
 
 def _template_flags(template: str, *, cg: bool = False) -> list[str]:
     path = Path(template.rstrip("/"))
+    bif_path = _first_file(path, ".bif")
+    nb_path = _first_file(path, ".nb")
+    dynamic_template_flags: list[str] = []
+    if bif_path is not None:
+        dynamic_template_flags.extend(["-templateBif", str(bif_path)])
+    if nb_path is not None:
+        dynamic_template_flags.extend(["-templateNb", str(nb_path)])
     if cg:
-        return ["-CA"]
+        return ["-CA", *dynamic_template_flags, *_contact_flags_from_sif(path)]
     if path.name in TEMPLATE_MODELS:
-        return [TEMPLATE_MODELS[path.name]]
+        return [TEMPLATE_MODELS[path.name], *dynamic_template_flags]
+    if path.name.startswith("SBM_CA"):
+        return ["-CA", *dynamic_template_flags, *_contact_flags_from_sif(path)]
+    if path.name.startswith("SBM_AA"):
+        return ["-AA", *dynamic_template_flags, *_contact_flags_from_sif(path)]
     if path.name in {"temp.bifsif", "temp.cont.bifsif"}:
         model = "-AAMATCH" if (path / "CB.bif").exists() or (path / "comparelist").exists() else ("-CA" if "cont" in path.name else "-AA")
         flags = [model]
@@ -142,6 +153,10 @@ def translate_smogcheck_args(argv: list[str], *, stdin_text: str | None = None) 
     i = 0
     while i < len(argv):
         arg = argv[i]
+        if arg == "-opensmog":
+            translated.append("-OpenSMOG")
+            i += 1
+            continue
         if arg in {"-SCMorig", "-keep4SCM"}:
             i += 1
             continue
@@ -161,7 +176,8 @@ def translate_smogcheck_args(argv: list[str], *, stdin_text: str | None = None) 
         return translated
 
     if not _has_model_flag(translated):
-        model_from_template = next((flag for flag in template_flags if flag in MODEL_FLAGS), None)
+        template_model_flags = [flag for flag in template_flags if flag in MODEL_FLAGS]
+        model_from_template = template_model_flags[-1] if template_model_flags else None
         has_gaussian_template = any(
             template_flags[idx] == "-contactMode" and idx + 1 < len(template_flags) and template_flags[idx + 1].endswith("-gaussian")
             for idx in range(len(template_flags))
@@ -189,7 +205,16 @@ def translate_smogcheck_args(argv: list[str], *, stdin_text: str | None = None) 
             continue
         if flag in MODEL_FLAGS:
             continue
-        if flag.startswith("-") and flag in existing_option_names:
+        if flag.startswith("-") and flag in existing_option_names and flag not in {
+            "-templateBif",
+            "-templateNb",
+            "-contactMode",
+            "-contactParam",
+            "-contactShadowSize",
+            "-contactBondedRadius",
+            "-contactStackScale",
+            "-dihedralCounting",
+        }:
             skip_value = idx + 1 < len(template_flags) and not template_flags[idx + 1].startswith("-")
             continue
         translated.append(flag)

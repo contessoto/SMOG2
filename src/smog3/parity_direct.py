@@ -187,14 +187,14 @@ def _compare_file(a: Path, b: Path) -> dict:
     ta, tb = a.read_text().splitlines(), b.read_text().splitlines()
     if ta == tb:
         return {"match": True}
-    if a.name == "model.top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
+    if a.suffix == ".top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
         return {"match": True, "ignored": "topology header metadata before first section"}
-    if a.name == "model.top" and _top_matches_with_float_ulp(ta, tb):
+    if a.suffix == ".top" and _top_matches_with_float_ulp(ta, tb):
         return {
             "match": True,
             "ignored": "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention",
         }
-    if a.name == "model.xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
+    if a.suffix == ".xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
         return {"match": True, "ignored": "OpenSMOG XML generated comment metadata before root element"}
     diff = "\n".join(difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2))
     return {"match": False, "diff": diff[:4000]}

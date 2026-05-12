@@ -6,6 +6,7 @@ from itertools import combinations
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -430,32 +431,46 @@ def _contact_bond_spec_for_pair(pair_type_i: str, pair_type_j: str, specs: list[
     return None
 
 
-def _opensmog_contact_spec(template_path: Path | None, nb_path: Path | None) -> dict[str, object] | None:
+def _opensmog_contact_specs(template_path: Path | None, nb_path: Path | None) -> list[dict[str, object]]:
     if template_path is None or nb_path is None:
-        return None
+        return []
     sif_path = template_path.with_suffix(".sif")
     if not sif_path.exists() or not nb_path.exists():
-        return None
+        return []
     sif_root = ET.parse(sif_path).getroot()
+    functions: dict[str, ET.Element] = {}
     for function in sif_root.findall(".//function"):
         if function.attrib.get("directive") != "OpenSMOG" or function.attrib.get("OpenSMOGtype") != "contact":
             continue
         name = function.attrib.get("name", "")
         if not name:
             continue
-        nb_root = ET.parse(nb_path).getroot()
-        for contact in nb_root.findall("./contact"):
-            func = contact.attrib.get("func", "")
-            if not func.startswith(f"{name}("):
-                continue
-            args = func.partition("(")[2].rsplit(")", 1)[0]
-            return {
-                "name": name,
-                "expression": function.attrib.get("OpenSMOGpotential", ""),
-                "parameters": [param.strip() for param in function.attrib.get("OpenSMOGparameters", "").split(",") if param.strip()],
-                "args": [arg.strip() for arg in args.split(",")],
-            }
-    return None
+        functions[name] = function
+    nb_root = ET.parse(nb_path).getroot()
+    specs: list[dict[str, object]] = []
+    for order, contact in enumerate(nb_root.findall("./contact")):
+        func = contact.attrib.get("func", "")
+        name = func.partition("(")[0]
+        function = functions.get(name)
+        if function is None:
+            continue
+        args = func.partition("(")[2].rsplit(")", 1)[0]
+        pair_types = tuple((node.text or "*").strip() for node in contact.findall("./pairType"))
+        specs.append({
+            "name": name,
+            "expression": function.attrib.get("OpenSMOGpotential", ""),
+            "parameters": [param.strip() for param in function.attrib.get("OpenSMOGparameters", "").split(",") if param.strip()],
+            "args": [arg.strip() for arg in args.split(",")],
+            "pair_types": pair_types,
+            "specificity": sum(1 for item in pair_types if item != "*"),
+            "order": order,
+        })
+    return specs
+
+
+def _opensmog_contact_spec(template_path: Path | None, nb_path: Path | None) -> dict[str, object] | None:
+    specs = _opensmog_contact_specs(template_path, nb_path)
+    return specs[0] if specs else None
 
 
 def _opensmog_contact_arg_value(arg: str, r0: float, epsilon: float) -> str:
@@ -470,6 +485,66 @@ def _opensmog_contact_arg_value(arg: str, r0: float, epsilon: float) -> str:
         {"r0": r0, "sin": math.sin, "cos": math.cos, "tan": math.tan, "tanh": math.tanh, "sqrt": math.sqrt},
     )
     return f"{float(value):7.5e}"
+
+
+def _xml_attr(value: str) -> str:
+    return value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _opensmog_nonbond_settings(template_path: Path | None) -> tuple[list[tuple[str, str]], dict[str, object] | None]:
+    """Extract OpenSMOG constants and custom nonbonded settings from a SIF file."""
+
+    if template_path is None:
+        return [], None
+    sif_path = template_path.with_suffix(".sif")
+    if not sif_path.exists():
+        return [], None
+    try:
+        root = ET.parse(sif_path).getroot()
+    except ET.ParseError:
+        return [], None
+    constants = sorted(
+        (
+            (node.attrib.get("name", ""), node.attrib.get("value", ""))
+            for node in root.findall(".//OpenSMOGsettings/constants/constant")
+            if node.attrib.get("name")
+        ),
+        key=lambda item: item[0],
+    )
+    custom = root.find(".//CustomNonBonded")
+    nonbond = None
+    if custom is not None and custom.attrib.get("OpenSMOGpotential"):
+        parameters = [item.strip() for item in custom.attrib.get("OpenSMOGparameters", "").split(",") if item.strip()]
+        if not parameters:
+            parameters = ["null"]
+        parameter_rows: list[tuple[str, str, list[str]]] = []
+        extras_path = template_path.with_suffix(".extras")
+        if extras_path.exists():
+            for raw in extras_path.read_text().splitlines():
+                text = raw.strip()
+                if not text or text.startswith((";", "#")) or not text.startswith("nonbond_params"):
+                    continue
+                cols = text.replace("<", " ").split()
+                if len(cols) >= 6:
+                    parameter_rows.append((cols[1], cols[2], cols[4:]))
+        expression = custom.attrib["OpenSMOGpotential"].strip()
+        if parameter_rows:
+            for parameter in parameters:
+                expression = re.sub(rf"\b{re.escape(parameter)}\b(?!\s*\()", f"{parameter}(type1,type2)", expression)
+        nonbond = {
+            "expression": expression,
+            "parameters": parameters,
+            "cutoff": custom.attrib.get("r_c") or custom.attrib.get("nbcutoff"),
+            "parameter_rows": parameter_rows,
+        }
+    return constants, nonbond
+
+
+def _opensmog_numeric_attr(value: str) -> str:
+    text = str(value)
+    if "." not in text and "e" not in text.lower():
+        return text
+    return f"{float(text):.5e}"
 
 
 def _opensmog_custom_dihedral_items(atoms, template_path: Path) -> list[tuple[int, int, int, int, float, float]]:
@@ -518,6 +593,7 @@ def _write_opensmog_xml(
     nb_path: Path | None = None,
     generate_pair_exclusions: bool = False,
 ):
+    custom_contact_specs: list[dict[str, object]] = []
     if model == "CA":
         pair_items = [(i, j, None) for i, j in _ca_contact_pair_items(atoms, contacts)]
         normal_pair_items = pair_items
@@ -529,7 +605,10 @@ def _write_opensmog_xml(
         resnames = _smog2_residue_names(atoms)
         attrs_by_name = _template_atom_attributes(template_path)
         contact_bond_specs = _bond_contact_specs(nb_path)
-        custom_contact_spec = _opensmog_contact_spec(template_path, nb_path)
+        custom_contact_specs = sorted(
+            _opensmog_contact_specs(template_path, nb_path),
+            key=lambda spec: (-int(spec.get("specificity", 0)), int(spec.get("order", 0))),
+        )
         contact_bond_items = []
         normal_pair_items = []
         for i, j, r0_override in pair_items:
@@ -550,12 +629,18 @@ def _write_opensmog_xml(
         epsilon = (len(atoms) * (1.2 / 2.2)) / normalizable_contacts if normalizable_contacts else 0.0
     else:
         epsilon = _case1_contact_epsilon(atoms, pair_atoms)
+    constants, nonbond = _opensmog_nonbond_settings(template_path)
     lines = [
         "<!--    OpenSMOG xml file generated by SMOG3.",
         " -->",
         "<OpenSMOGforces>",
-        " <contacts>",
     ]
+    if constants:
+        lines.append(" <constants>")
+        for name, value in constants:
+            lines.append(f'  <constant name="{_xml_attr(name)}" value="{_xml_attr(value)}"/>')
+        lines.append(" </constants>")
+    lines.append(" <contacts>")
     if contact_bond_items:
         lines.extend([
             '  <contacts_type name="bond_type6">',
@@ -568,24 +653,52 @@ def _write_opensmog_xml(
             r0 *= float(spec["r_scale"])
             lines.append(f'   <interaction i="{i}" j="{j}" eps="{float(spec["force"]):g}" r0="{r0:7.5e}"/>')
         lines.append("  </contacts_type>")
-    if model != "CA" and not gaussian_contacts and custom_contact_spec is not None:
-        parameters = custom_contact_spec["parameters"]  # type: ignore[index]
-        args = custom_contact_spec["args"]  # type: ignore[index]
-        lines.extend([
-            f'  <contacts_type name="{custom_contact_spec["name"]}">',
-            f'   <expression expr="{custom_contact_spec["expression"]}"/>',
-        ])
-        for parameter in parameters:
-            lines.append(f"   <parameter>{parameter}</parameter>")
-        if generate_pair_exclusions:
-            lines.append('   <exclusions generate="1"/>')
+    if model != "CA" and not gaussian_contacts and custom_contact_specs:
+        spec_items: dict[int, list[tuple[int, int, float | None]]] = {
+            idx: [] for idx in range(len(custom_contact_specs))
+        }
         for i, j, r0_override in normal_pair_items:
-            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
-            attrs = " ".join(
-                f'{parameter}="{_opensmog_contact_arg_value(arg, r0, epsilon)}"'
-                for parameter, arg in zip(parameters, args)
-            )
-            lines.append(f'   <interaction i="{i}" j="{j}" {attrs}/>')
+            pair_type_i = _pair_type_for_atom(atoms[i - 1], attrs_by_name)
+            pair_type_j = _pair_type_for_atom(atoms[j - 1], attrs_by_name)
+            for idx, spec in enumerate(custom_contact_specs):
+                pair_types = spec.get("pair_types", ("*", "*"))
+                if _match_pair(tuple(pair_types), (pair_type_i, pair_type_j)) or _match_pair(tuple(pair_types), (pair_type_j, pair_type_i)):
+                    spec_items[idx].append((i, j, r0_override))
+                    break
+        emitted_custom_contact_type = False
+        for idx, spec in enumerate(custom_contact_specs):
+            items = spec_items[idx]
+            if not items:
+                continue
+            parameters = spec["parameters"]  # type: ignore[index]
+            args = spec["args"]  # type: ignore[index]
+            lines.extend([
+                f'  <contacts_type name="{spec["name"]}">',
+                f'   <expression expr="{spec["expression"]}"/>',
+            ])
+            for parameter in parameters:
+                lines.append(f"   <parameter>{parameter}</parameter>")
+            if generate_pair_exclusions:
+                lines.append('   <exclusions generate="1"/>')
+            for i, j, r0_override in items:
+                r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+                attrs = " ".join(
+                    f'{parameter}="{_opensmog_contact_arg_value(arg, r0, epsilon)}"'
+                    for parameter, arg in zip(parameters, args)
+                )
+                lines.append(f'   <interaction i="{i}" j="{j}" {attrs}/>')
+            lines.append("  </contacts_type>")
+            emitted_custom_contact_type = True
+        if generate_pair_exclusions and not emitted_custom_contact_type:
+            spec = custom_contact_specs[0]
+            lines.extend([
+                f'  <contacts_type name="{spec["name"]}">',
+                f'   <expression expr="{spec["expression"]}"/>',
+            ])
+            for parameter in spec["parameters"]:  # type: ignore[index]
+                lines.append(f"   <parameter>{parameter}</parameter>")
+            lines.append('   <exclusions generate="1"/>')
+            lines.append("  </contacts_type>")
     elif gaussian_contacts:
         lines.extend([
             '  <contacts_type name="contact_gaussian">',
@@ -636,10 +749,35 @@ def _write_opensmog_xml(
                 acoef = epsilon * (r0 ** 12)
                 bcoef = 2.0 * epsilon * (r0 ** 6)
             lines.append(f'   <interaction i="{i}" j="{j}" A="{acoef:7.5e}" B="{bcoef:7.5e}"/>')
-    lines.extend([
-        "  </contacts_type>",
-        " </contacts>",
-    ])
+    if not (model != "CA" and not gaussian_contacts and custom_contact_specs):
+        lines.append("  </contacts_type>")
+    lines.append(" </contacts>")
+    if nonbond is not None:
+        parameters = list(nonbond["parameters"])  # type: ignore[index]
+        parameter_rows = list(nonbond.get("parameter_rows", []))  # type: ignore[union-attr]
+        lines.extend([
+            " <nonbond>",
+            "  <nonbond_bytype>",
+            f'   <expression expr="{_xml_attr(str(nonbond["expression"]))}"/>',
+        ])
+        if nonbond.get("cutoff"):
+            lines.insert(-1, f'   <cutoff distance="{_xml_attr(str(nonbond["cutoff"]))}"/>')
+        for parameter in parameters:
+            lines.append(f"   <parameter>{_xml_attr(str(parameter))}</parameter>")
+        if parameter_rows:
+            for type1, type2, values in parameter_rows:
+                attrs = " ".join(
+                    f'{_xml_attr(str(parameter))}="{_xml_attr(_opensmog_numeric_attr(str(value)))}"'
+                    for parameter, value in zip(parameters, values)
+                )
+                lines.append(f'   <nonbond_param type1="{_xml_attr(str(type1))}" type2="{_xml_attr(str(type2))}" {attrs}/>')
+        else:
+            attrs = " ".join(f'{_xml_attr(str(parameter))}="0"' for parameter in parameters)
+            lines.append(f'   <nonbond_param type1="NB_1" type2="NB_1" {attrs}/>')
+        lines.extend([
+            "  </nonbond_bytype>",
+            " </nonbond>",
+        ])
     if model == "AA-CCD" and template_path is not None:
         custom_dihedrals = _opensmog_custom_dihedral_items(atoms, template_path)
         if custom_dihedrals:
@@ -2020,6 +2158,18 @@ def _write_case1_final_top(
             normal_pair_items.append((i, j, r0_override))
         else:
             contact_bond_items.append((i, j, r0_override, contact_bond_spec))
+    if atomtypes_lines is None:
+        used_types = []
+        seen_types = set()
+        for atom, resname in zip(atoms, resnames):
+            atom_type = attrs_by_name.get((resname, atom[1]), {}).get("nbType", "NB_1")
+            if atom_type not in seen_types:
+                used_types.append(atom_type)
+                seen_types.add(atom_type)
+        atomtypes_lines = [
+            f' {atom_type:<6} 1.0000   0.000000  A     0.00000e+00   {atomtype_c12:.5e}  '
+            for atom_type in used_types
+        ]
     lines = [
         '; SMOG3 case-1 topology generated from native bonded geometry',
         '',
@@ -2029,7 +2179,7 @@ def _write_case1_final_top(
         '',
         '[ atomtypes ] ',
         atomtypes_header,
-        *(atomtypes_lines or [f' NB_1   1.0000   0.000000  A     0.00000e+00   {atomtype_c12:.5e}  ']),
+        *atomtypes_lines,
     ]
     if testing_template:
         lines.extend([
@@ -2575,6 +2725,8 @@ def main(argv: list[str]) -> int:
     p.add_argument("-matchGenPairs", default="0")
     p.add_argument("-matchFudgeLJ", default="1.0")
     p.add_argument("-matchFudgeQQ", default="1.0")
+    p.add_argument("-templateBif", default=None)
+    p.add_argument("-templateNb", default=None)
     p.add_argument("-dname", default="smog")
     p.add_argument("-o", default=None)
     p.add_argument("-g", default=None)
@@ -2665,6 +2817,8 @@ def main(argv: list[str]) -> int:
     aa2cg_template = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_2cg" / "AA-test.bif"
     aa2cg_nb = repo_root / "SMOG-CHECK" / "share" / "templates" / "SBM_2cg" / "AA-test.nb"
     match_template, match_nb = _match_template_paths()
+    custom_template_path = Path(ns.templateBif) if ns.templateBif else None
+    custom_nb_path = Path(ns.templateNb) if ns.templateNb else (custom_template_path.with_suffix(".nb") if custom_template_path else None)
     nondefault_values = {
         "contact_ratio": 1.2,
         "relative_strengths": {"bb_a": 1.0, "bb_n": 1.0, "sc_a": 1.0, "sc_n": 2.0},
@@ -2767,6 +2921,13 @@ def main(argv: list[str]) -> int:
     if ns.userContacts:
         contacts = _parse_user_contacts(Path(ns.userContacts))
     elif selected_scm_contact_mode:
+        scm_bif_path = (
+            custom_template_path
+            if custom_template_path is not None
+            else match_template if model == "AA-MATCH"
+            else aa_testing_template if ns.contactMode == "shadow"
+            else None
+        )
         contacts = _generate_contacts_with_scm(
             coord,
             top,
@@ -2777,7 +2938,7 @@ def main(argv: list[str]) -> int:
             shadow_size=contact_shadow_size,
             bonded_radius=contact_bonded_radius,
             extra_bonds=aa_extra_bonds,
-            bif_path=match_template if model == "AA-MATCH" else (aa_testing_template if ns.contactMode == "shadow" else None),
+            bif_path=scm_bif_path,
         ) or []
     elif ns.contactMode:
         if atomtype == "CA" and ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} and selected_scm_contacts:
@@ -2792,7 +2953,7 @@ def main(argv: list[str]) -> int:
                 shadow_size=0.0 if ns.contactMode in {"cutoff", "cutoff-gaussian"} else contact_shadow_size,
                 bonded_radius=0.0 if ns.contactMode in {"cutoff", "cutoff-gaussian"} else contact_bonded_radius,
                 extra_bonds=ca_extra_bonds,
-                bif_path=aa_static_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None,
+                bif_path=custom_template_path or (aa_static_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None),
             ) or []
         elif atomtype == "AA" and ns.contactMode in {"cutoff", "cutoff-gaussian"} and selected_scm_contacts:
             contacts = _generate_contacts_with_scm(
@@ -2804,7 +2965,7 @@ def main(argv: list[str]) -> int:
                 shadow_size=0.0,
                 bonded_radius=0.0,
                 extra_bonds=aa_extra_bonds,
-                bif_path=aa_testing_template,
+                bif_path=custom_template_path or aa_testing_template,
             ) or []
         else:
             min_sep = 3 if model.startswith("AA") else 2
@@ -2827,7 +2988,7 @@ def main(argv: list[str]) -> int:
             contacts_path,
             atoms,
             extra_bonds=aa_extra_bonds,
-            bif_path=aa2cg_template if model == "AA2CG" else (aa_cr2_template if model == "AA-nb-cr2" else (aa_bond_template if model == "AA-BOND" else None)),
+            bif_path=custom_template_path or (aa2cg_template if model == "AA2CG" else (aa_cr2_template if model == "AA-nb-cr2" else (aa_bond_template if model == "AA-BOND" else None))),
         ) or []
     elif gaussian:
         contacts = [(i, i + 3, tuple()) for i in range(1, max(1, len(atoms) - 2))]
@@ -2868,19 +3029,28 @@ def main(argv: list[str]) -> int:
             include_exclusions=not dropin_opensmog_v27,
         )
     elif full_scm_topology:
-        template_path = (
-            aa2cg_template if model == "AA2CG"
-            else aa_cr2_template if model == "AA-nb-cr2"
-            else aa_bond_template if model == "AA-BOND"
-            else (aa_testing_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
-        )
-        nb_path = (
-            aa2cg_nb if model == "AA2CG"
-            else aa_cr2_nb if model == "AA-nb-cr2"
-            else aa_bond_nb if model == "AA-BOND"
-            else (aa_testing_nb if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None)
-        )
-        use_testing_template = ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}
+        if custom_template_path is not None:
+            template_path = custom_template_path
+        elif model == "AA2CG":
+            template_path = aa2cg_template
+        elif model == "AA-nb-cr2":
+            template_path = aa_cr2_template
+        elif model == "AA-BOND":
+            template_path = aa_bond_template
+        else:
+            template_path = aa_testing_template if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None
+
+        if custom_nb_path is not None:
+            nb_path = custom_nb_path
+        elif model == "AA2CG":
+            nb_path = aa2cg_nb
+        elif model == "AA-nb-cr2":
+            nb_path = aa_cr2_nb
+        elif model == "AA-BOND":
+            nb_path = aa_bond_nb
+        else:
+            nb_path = aa_testing_nb if ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"} else None
+        use_testing_template = custom_template_path is None and ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}
         _write_case1_final_top(
             top,
             atoms,
@@ -2930,17 +3100,17 @@ def main(argv: list[str]) -> int:
             xml_template_path = _shadow_free_template_path()
             xml_nb_path = xml_template_path.with_suffix(".nb")
         elif model == "AA2CG":
-            xml_template_path = aa2cg_template
-            xml_nb_path = aa2cg_nb
+            xml_template_path = custom_template_path or aa2cg_template
+            xml_nb_path = custom_nb_path or aa2cg_nb
         elif model == "AA-CC1":
-            xml_template_path = aa_custom_contacts_template
-            xml_nb_path = aa_custom_contacts_nb
+            xml_template_path = custom_template_path or aa_custom_contacts_template
+            xml_nb_path = custom_nb_path or aa_custom_contacts_nb
         elif model == "AA-CCD":
-            xml_template_path = aa_custom_dihe_template
-            xml_nb_path = aa_custom_dihe_nb
+            xml_template_path = custom_template_path or aa_custom_dihe_template
+            xml_nb_path = custom_nb_path or aa_custom_dihe_nb
         elif ns.contactMode in {"shadow", "cutoff", "cutoff-gaussian"}:
-            xml_template_path = aa_testing_template
-            xml_nb_path = aa_testing_nb
+            xml_template_path = custom_template_path or aa_testing_template
+            xml_nb_path = custom_nb_path or aa_testing_nb
         _write_opensmog_xml(
             xml_path,
             atoms,
