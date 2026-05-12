@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import itertools
 import json
 import math
 import os
@@ -189,14 +190,23 @@ def _compare_file(a: Path, b: Path) -> dict:
         return {"match": True}
     if a.suffix == ".top" and _drop_top_header_metadata(ta) == _drop_top_header_metadata(tb):
         return {"match": True, "ignored": "topology header metadata before first section"}
+    if a.suffix == ".xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
+        return {"match": True, "ignored": "OpenSMOG XML generated comment metadata before root element"}
     if a.suffix == ".top" and _top_matches_with_float_ulp(ta, tb):
         return {
             "match": True,
             "ignored": "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention",
         }
-    if a.suffix == ".xml" and _drop_xml_header_metadata(ta) == _drop_xml_header_metadata(tb):
-        return {"match": True, "ignored": "OpenSMOG XML generated comment metadata before root element"}
-    diff = "\n".join(difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2))
+    if max(len(ta), len(tb)) > 50000:
+        for idx, (left, right) in enumerate(itertools.zip_longest(ta, tb, fillvalue="<missing>"), start=1):
+            if left != right:
+                return {
+                    "match": False,
+                    "diff": f"large-file first differing line {idx}\n--- {a}\n+++ {b}\n- {left}\n+ {right}",
+                }
+        return {"match": False, "diff": "large files differ"}
+    diff_iter = difflib.unified_diff(ta, tb, fromfile=str(a), tofile=str(b), n=2)
+    diff = "\n".join(itertools.islice(diff_iter, 120))
     return {"match": False, "diff": diff[:4000]}
 
 

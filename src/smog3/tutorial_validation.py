@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import itertools
 import json
 import os
 import shutil
@@ -108,8 +109,15 @@ def _read_lines(path: Path) -> list[str]:
 def _first_diff(a: Path, b: Path, limit: int = 80) -> str:
     if not a.exists() or not b.exists():
         return ""
-    diff = difflib.unified_diff(_read_lines(a), _read_lines(b), fromfile=str(a), tofile=str(b), n=3, lineterm="")
-    return "\n".join(list(diff)[:limit])
+    left_lines = _read_lines(a)
+    right_lines = _read_lines(b)
+    if max(len(left_lines), len(right_lines)) > 50000:
+        for idx, (left, right) in enumerate(itertools.zip_longest(left_lines, right_lines, fillvalue="<missing>"), start=1):
+            if left != right:
+                return f"large-file first differing line {idx}\n--- {a}\n+++ {b}\n- {left}\n+ {right}"
+        return "large files differ"
+    diff = difflib.unified_diff(left_lines, right_lines, fromfile=str(a), tofile=str(b), n=3, lineterm="")
+    return "\n".join(itertools.islice(diff, limit))
 
 
 def _topology_section_counts(path: Path) -> dict[str, int]:
@@ -472,13 +480,19 @@ def _workflow_ions_command(use_installed: bool) -> str:
     return "smog3-ions" if use_installed else "python3 -m smog3.ions_native"
 
 
+def _workflow_extract_command(use_installed: bool) -> str:
+    return "smog3-extract" if use_installed else "python3 -m smog3.extract_native"
+
+
 def _workflow_candidate_command(command: str, use_installed: bool) -> str:
-    if command.startswith("smog_adjustPDB "):
+    if "smog_adjustPDB " in command:
         return command.replace("smog_adjustPDB", _workflow_adjust_command(), 1)
-    if command.startswith("smog2 "):
-        return command.replace("smog2", _workflow_smog3_command(use_installed), 1)
-    if command.startswith("smog_ions "):
+    if "smog_extract " in command:
+        return command.replace("smog_extract", _workflow_extract_command(use_installed), 1)
+    if "smog_ions " in command:
         return command.replace("smog_ions", _workflow_ions_command(use_installed), 1)
+    if "smog2 " in command:
+        return command.replace("smog2", _workflow_smog3_command(use_installed), 1)
     return command
 
 

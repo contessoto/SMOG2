@@ -168,7 +168,8 @@ def _format_contact_lines(contacts, *, chain_map: dict[int, int] | None = None) 
     chain_map = chain_map or {}
     lines: list[str] = []
     for chain_i, atom_i, rest in contacts:
-        out_chain_i = chain_map.get(int(chain_i), int(chain_i))
+        chain_i_int = int(chain_i)
+        out_chain_i = chain_map.get(chain_i_int, chain_i_int)
         if len(rest) >= 2:
             try:
                 chain_j_int = int(rest[0])
@@ -279,6 +280,27 @@ def _template_atom_attributes(path: Path) -> dict[tuple[str, str], dict[str, str
     return out
 
 
+def _template_nb_defaults_line(path: Path | None) -> str | None:
+    """Return the Gromacs [ defaults ] line encoded by a template .nb file."""
+
+    if path is None or not path.exists():
+        return None
+    try:
+        defaults = ET.parse(path).getroot().find("./defaults")
+    except ET.ParseError:
+        return None
+    if defaults is None:
+        return None
+    comb_rule = defaults.attrib.get("gmx-combination-rule", defaults.attrib.get("comb-rule", "1"))
+    gen_pairs = defaults.attrib.get("gen-pairs", "0")
+    gen_pairs_text = "yes" if gen_pairs.lower() in {"1", "yes", "true"} else "no"
+    fudge_lj = defaults.attrib.get("fudgeLJ")
+    fudge_qq = defaults.attrib.get("fudgeQQ")
+    if fudge_lj is not None or fudge_qq is not None:
+        return f"  1      {comb_rule}         {gen_pairs_text}        {fudge_lj or '1'}       {fudge_qq or '1'}"
+    return f"  1      {comb_rule}         {gen_pairs_text}"
+
+
 def _template_bond_length_rules(path: Path | None = None) -> list[tuple[tuple[str, str], float, int]]:
     template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     b_path = template_path.with_suffix(".b")
@@ -306,6 +328,86 @@ def _template_bond_length_rules(path: Path | None = None) -> list[tuple[tuple[st
     return rules
 
 
+def _template_angle_rules(path: Path | None = None) -> list[tuple[tuple[str, str, str], float, float, int]]:
+    """Parse static harmonic angle rules from a template .b file."""
+
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
+    b_path = template_path.with_suffix(".b")
+    if not b_path.exists():
+        return []
+    try:
+        root = ET.parse(b_path).getroot()
+    except ET.ParseError:
+        return []
+    rules: list[tuple[tuple[str, str, str], float, float, int]] = []
+    for angle in root.findall("./angles/angle"):
+        btypes = tuple((node.text or "*").strip() for node in angle.findall("./bType"))
+        if len(btypes) != 3:
+            continue
+        match = re.search(r"angle_harmonic\(([^,]+),\s*([^)]+)\)", angle.attrib.get("func", ""))
+        if not match or "?" in match.group(1):
+            continue
+        try:
+            theta = float(match.group(1))
+            force = float(match.group(2))
+        except ValueError:
+            continue
+        specificity = sum(1 for btype in btypes if btype != "*")
+        rules.append((btypes, theta, force, specificity))
+    return rules
+
+
+def _template_cosine4_dihedral_groups(path: Path | None = None) -> dict[str, tuple[float, float, int]]:
+    """Return energy groups represented by Gromacs func-4 cosine dihedrals."""
+
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
+    b_path = template_path.with_suffix(".b")
+    if not b_path.exists():
+        return {}
+    try:
+        root = ET.parse(b_path).getroot()
+    except ET.ParseError:
+        return {}
+    out: dict[str, tuple[float, float, int]] = {}
+    for dihedral in root.findall("./dihedrals/dihedral"):
+        group = dihedral.attrib.get("energyGroup", "")
+        match = re.search(r"dihedral_cosine4\(([^,]+),\s*([^,]+),\s*([^)]+)\)", dihedral.attrib.get("func", ""))
+        if not group or not match:
+            continue
+        try:
+            phase = 180.0 if abs(float(match.group(1))) < 1e-12 else float(match.group(1))
+            force = float(match.group(2))
+            mult = int(float(match.group(3)))
+        except ValueError:
+            continue
+        out[group] = (phase, force, mult)
+    return out
+
+
+def _template_harmonic_dihedral_groups(path: Path | None = None) -> dict[str, float]:
+    """Return force constants for template dihedral_harmonic energy groups."""
+
+    template_path = path or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
+    b_path = template_path.with_suffix(".b")
+    if not b_path.exists():
+        return {}
+    try:
+        root = ET.parse(b_path).getroot()
+    except ET.ParseError:
+        return {}
+    out: dict[str, float] = {}
+    for dihedral in root.findall("./dihedrals/dihedral"):
+        group = dihedral.attrib.get("energyGroup", "")
+        match = re.search(r"dihedral_harmonic\([^,]+,\s*([^)]+)\)", dihedral.attrib.get("func", ""))
+        if not group or not match:
+            continue
+        try:
+            out[group] = float(match.group(1))
+        except ValueError:
+            continue
+    return out
+
+
 def _template_bond_length_override(
     atoms,
     resnames: list[str],
@@ -327,6 +429,32 @@ def _template_bond_length_override(
         if matches and (best is None or (specificity, -order) > (best[0], best[1])):
             best = (specificity, -order, r0)
     return None if best is None else best[2]
+
+
+def _template_angle_override(
+    atoms,
+    resnames: list[str],
+    attrs_by_name: dict[tuple[str, str], dict[str, str]],
+    rules: list[tuple[tuple[str, str, str], float, float, int]],
+    i: int,
+    j: int,
+    k: int,
+) -> tuple[float, float] | None:
+    if not rules:
+        return None
+    btypes = (
+        attrs_by_name.get((resnames[i - 1], atoms[i - 1][1]), {}).get("bType", "*"),
+        attrs_by_name.get((resnames[j - 1], atoms[j - 1][1]), {}).get("bType", "*"),
+        attrs_by_name.get((resnames[k - 1], atoms[k - 1][1]), {}).get("bType", "*"),
+    )
+    best: tuple[int, int, float, float] | None = None
+    for order, (rule, theta, force, specificity) in enumerate(rules):
+        matches = all(r == "*" or r == b for r, b in zip(rule, btypes)) or all(
+            r == "*" or r == b for r, b in zip(rule, reversed(btypes))
+        )
+        if matches and (best is None or (specificity, -order) > (best[0], best[1])):
+            best = (specificity, -order, theta, force)
+    return None if best is None else (best[2], best[3])
 
 
 def _bond_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
@@ -375,9 +503,19 @@ def _pair_contact_specs(path: Path | None = None) -> list[dict[str, object]]:
         func = contact.attrib.get("func", "")
         if func.startswith("bond_type"):
             continue
+        r_scale = 1.0
+        arg_txt = func.partition("(")[2].rsplit(")", 1)[0]
+        args = [arg.strip() for arg in arg_txt.split(",")]
+        for arg in args:
+            if "?" not in arg or "*" not in arg:
+                continue
+            try:
+                r_scale = float(arg.split("*", 1)[1])
+            except ValueError:
+                r_scale = 1.0
         pair_types = tuple((node.text or "*").strip() for node in contact.findall("./pairType"))
         if len(pair_types) == 2:
-            specs.append({"pair_types": pair_types, "contact_group": contact.attrib.get("contactGroup", "c")})
+            specs.append({"pair_types": pair_types, "contact_group": contact.attrib.get("contactGroup", "c"), "r_scale": r_scale})
     return specs
 
 
@@ -419,6 +557,18 @@ def _pair_contact_group(pair_type_i: str, pair_type_j: str, specs: list[dict[str
                     best_score = score
                     best_group = str(spec["contact_group"])
     return best_group
+
+
+def _pair_contact_spec_for_pair(pair_type_i: str, pair_type_j: str, specs: list[dict[str, object]]) -> dict[str, object] | None:
+    best: tuple[int, dict[str, object]] | None = None
+    for spec in specs:
+        a, b = spec["pair_types"]  # type: ignore[index]
+        for left, right in ((a, b), (b, a)):
+            if (left == "*" or left == pair_type_i) and (right == "*" or right == pair_type_j):
+                score = (0 if left == "*" else 1) + (0 if right == "*" else 1)
+                if best is None or score > best[0]:
+                    best = (score, spec)
+    return None if best is None else best[1]
 
 
 def _contact_bond_spec_for_pair(pair_type_i: str, pair_type_j: str, specs: list[dict[str, object]]) -> dict[str, object] | None:
@@ -527,7 +677,7 @@ def _opensmog_nonbond_settings(template_path: Path | None) -> tuple[list[tuple[s
                 cols = text.replace("<", " ").split()
                 if len(cols) >= 6:
                     parameter_rows.append((cols[1], cols[2], cols[4:]))
-        expression = custom.attrib["OpenSMOGpotential"].strip()
+        expression = re.sub(r"\s+", "", custom.attrib["OpenSMOGpotential"].strip())
         if parameter_rows:
             for parameter in parameters:
                 expression = re.sub(rf"\b{re.escape(parameter)}\b(?!\s*\()", f"{parameter}(type1,type2)", expression)
@@ -592,8 +742,12 @@ def _write_opensmog_xml(
     template_path: Path | None = None,
     nb_path: Path | None = None,
     generate_pair_exclusions: bool = False,
+    contact_stack_scale: float = 1.0,
 ):
     custom_contact_specs: list[dict[str, object]] = []
+    attrs_by_name: dict[tuple[str, str], dict[str, str]] = {}
+    resnames: list[str] = []
+    pair_contact_specs: list[dict[str, object]] = []
     if model == "CA":
         pair_items = [(i, j, None) for i, j in _ca_contact_pair_items(atoms, contacts)]
         normal_pair_items = pair_items
@@ -605,6 +759,7 @@ def _write_opensmog_xml(
         resnames = _smog2_residue_names(atoms)
         attrs_by_name = _template_atom_attributes(template_path)
         contact_bond_specs = _bond_contact_specs(nb_path)
+        pair_contact_specs = _pair_contact_specs(nb_path)
         custom_contact_specs = sorted(
             _opensmog_contact_specs(template_path, nb_path),
             key=lambda spec: (-int(spec.get("specificity", 0)), int(spec.get("order", 0))),
@@ -627,9 +782,33 @@ def _write_opensmog_xml(
     pair_atoms = [(i, j) for i, j, _r0 in normal_pair_items]
     if model != "CA" and template_path is not None and template_path.name == "AA-test.free.bif":
         epsilon = (len(atoms) * (1.2 / 2.2)) / normalizable_contacts if normalizable_contacts else 0.0
+        pair_epsilons = {(i, j): epsilon for i, j, _r0 in normal_pair_items}
     else:
         epsilon = _case1_contact_epsilon(atoms, pair_atoms)
+        pair_epsilons = (
+            {(i, j): epsilon for i, j, _r0 in normal_pair_items}
+            if model == "CA"
+            else _case1_contact_epsilons(
+                atoms,
+                normal_pair_items,
+                attrs_by_name,
+                resnames,
+                template_path=template_path,
+                nb_path=nb_path,
+                contact_stack_scale=contact_stack_scale,
+            )
+        )
     constants, nonbond = _opensmog_nonbond_settings(template_path)
+
+    def contact_r0(i: int, j: int, r0_override: float | None) -> float:
+        r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+        if model == "CA" or custom_contact_specs:
+            return r0
+        pair_type_i = _pair_type_for_atom(atoms[i - 1], attrs_by_name)
+        pair_type_j = _pair_type_for_atom(atoms[j - 1], attrs_by_name)
+        spec = _pair_contact_spec_for_pair(pair_type_i, pair_type_j, pair_contact_specs)
+        return r0 * float(spec.get("r_scale", 1.0)) if spec is not None else r0
+
     lines = [
         "<!--    OpenSMOG xml file generated by SMOG3.",
         " -->",
@@ -681,9 +860,10 @@ def _write_opensmog_xml(
             if generate_pair_exclusions:
                 lines.append('   <exclusions generate="1"/>')
             for i, j, r0_override in items:
+                pair_epsilon = pair_epsilons.get((i, j), epsilon)
                 r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
                 attrs = " ".join(
-                    f'{parameter}="{_opensmog_contact_arg_value(arg, r0, epsilon)}"'
+                    f'{parameter}="{_opensmog_contact_arg_value(arg, r0, pair_epsilon)}"'
                     for parameter, arg in zip(parameters, args)
                 )
                 lines.append(f'   <interaction i="{i}" j="{j}" {attrs}/>')
@@ -711,7 +891,8 @@ def _write_opensmog_xml(
         if generate_pair_exclusions:
             lines.append('   <exclusions generate="1"/>')
         for i, j, r0_override in normal_pair_items:
-            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            pair_epsilon = pair_epsilons.get((i, j), epsilon)
+            r0 = contact_r0(i, j, r0_override)
             if model == "CA":
                 lines.append(
                     f'   <interaction i="{i}" j="{j}" A="1" '
@@ -720,7 +901,7 @@ def _write_opensmog_xml(
             else:
                 sigma = r0 / math.sqrt(34.6574)
                 lines.append(
-                    f'   <interaction i="{i}" j="{j}" A="{epsilon:7.5e}" '
+                    f'   <interaction i="{i}" j="{j}" A="{pair_epsilon:7.5e}" '
                     f'r0="{r0:7.5e}" sigmaG="{sigma:7.5e}" a="{5.96046e-9:7.5e}"/>'
                 )
     else:
@@ -741,13 +922,14 @@ def _write_opensmog_xml(
         if generate_pair_exclusions:
             lines.append('   <exclusions generate="1"/>')
         for i, j, r0_override in normal_pair_items:
-            r0 = r0_override if r0_override is not None else _distance_nm(atoms, i, j)
+            pair_epsilon = pair_epsilons.get((i, j), epsilon)
+            r0 = contact_r0(i, j, r0_override)
             if model == "CA":
                 acoef = 5.0 * (r0 ** 12)
                 bcoef = 6.0 * (r0 ** 10)
             else:
-                acoef = epsilon * (r0 ** 12)
-                bcoef = 2.0 * epsilon * (r0 ** 6)
+                acoef = pair_epsilon * (r0 ** 12)
+                bcoef = 2.0 * pair_epsilon * (r0 ** 6)
             lines.append(f'   <interaction i="{i}" j="{j}" A="{acoef:7.5e}" B="{bcoef:7.5e}"/>')
     if not (model != "CA" and not gaussian_contacts and custom_contact_specs):
         lines.append("  </contacts_type>")
@@ -755,6 +937,16 @@ def _write_opensmog_xml(
     if nonbond is not None:
         parameters = list(nonbond["parameters"])  # type: ignore[index]
         parameter_rows = list(nonbond.get("parameter_rows", []))  # type: ignore[union-attr]
+        if model != "CA" and parameter_rows:
+            used_nonbond_types = {
+                attrs_by_name.get((resname, atom[1]), {}).get("nbType", "NB_1")
+                for atom, resname in zip(atoms, resnames)
+            }
+            parameter_rows = [
+                (type1, type2, values)
+                for type1, type2, values in parameter_rows
+                if type1 in used_nonbond_types and type2 in used_nonbond_types
+            ]
         lines.extend([
             " <nonbond>",
             "  <nonbond_bytype>",
@@ -986,11 +1178,13 @@ def _bonded_geometry(
         adj[left].add(right)
         adj[right].add(left)
 
-    if strict_template_bonds:
-        _template_impropers, bond_groups = _template_geometry(template)
-        residues, _atom_to_residue, _atom_names = _residue_groups(atoms)
+    _template_impropers, bond_groups = _template_geometry(template)
+    residues, _atom_to_residue, _atom_names = _residue_groups(atoms)
+    if strict_template_bonds or bond_groups:
         for residue in residues:
             resn = str(residue["key"][2])  # type: ignore[index]
+            if not strict_template_bonds and residue_types.get(resn, "") in {"amino", "nucleic"}:
+                continue
             atom_map = residue["atoms"]
             assert isinstance(atom_map, dict)
             template_bonds = bond_groups.get(resn, {})
@@ -1314,6 +1508,7 @@ def _case1_dihedrals(
     template_path = template or _runtime_data_path("share", "templates", "SBM_AA", "AA-whitford09.bif")
     template_impropers, bond_groups = _template_geometry(template_path)
     residue_types = _template_residue_types(template_path)
+    cosine4_groups = _template_cosine4_dihedral_groups(template_path)
     residues, atom_to_residue, atom_names = _residue_groups(atoms)
 
     improper_keys: set[tuple[int, int, int, int]] = set()
@@ -1355,17 +1550,18 @@ def _case1_dihedrals(
         if not same_chain or "C" not in left or "N" not in right:
             continue
 
-        peptide_specs = [
-            ("CA", "C", "N", "CA"),
-            ("O", "C", "N", "CA"),
-        ]
-        for a0, a1, a2, a3 in peptide_specs:
-            if a0 in left and a1 in left and a2 in right and a3 in right:
-                improper_keys.add(_canonical_dihedral((left[a0], left[a1], right[a2], right[a3])))
+        if "r_a" not in cosine4_groups:
+            peptide_specs = [
+                ("CA", "C", "N", "CA"),
+                ("O", "C", "N", "CA"),
+            ]
+            for a0, a1, a2, a3 in peptide_specs:
+                if a0 in left and a1 in left and a2 in right and a3 in right:
+                    improper_keys.add(_canonical_dihedral((left[a0], left[a1], right[a2], right[a3])))
         if "O" in left and "CA" in left:
             improper_keys.add(_canonical_dihedral((left["O"], left["CA"], left["C"], right["N"])))
 
-        if next_residue["key"][2] == "PRO" and "CD" in right:  # type: ignore[index]
+        if "r_a" not in cosine4_groups and next_residue["key"][2] == "PRO" and "CD" in right:  # type: ignore[index]
             for a0, a1, a2, a3 in [("CA", "C", "N", "CD"), ("O", "C", "N", "CD")]:
                 if a0 in left and a1 in left and a2 in right and a3 in right:
                     improper_keys.add(_canonical_dihedral((left[a0], left[a1], right[a2], right[a3])))
@@ -1384,7 +1580,7 @@ def _case1_dihedrals(
         central_group = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
         pro_ring = same_residue and resn in {"PRO", "PROT"} and atom_names[j] in pro_ring_atoms and atom_names[k] in pro_ring_atoms
         amp_base_ring = same_residue and resn == "AMP" and atom_names[j] in purine_ring_atoms and atom_names[k] in purine_ring_atoms
-        if central_group in {"pr_a", "pr_n", "r_l", "lig", "r_a", "bb_g"} or pro_ring or amp_base_ring:
+        if (central_group in {"pr_a", "pr_n", "r_l", "lig", "r_a", "bb_g"} and central_group not in cosine4_groups) or pro_ring or amp_base_ring:
             improper_keys.add(_canonical_dihedral(t))
 
     proper_out = [t for t in proper_dihedrals if _canonical_dihedral(t) not in improper_keys]
@@ -1549,13 +1745,14 @@ def _case1_improper_dihedral_weight(
     residue_types: dict[str, str],
     central_counts: dict[tuple[int, int, str], int],
     graph_dihedral_keys: set[tuple[int, int, int, int]],
+    harmonic_groups: dict[str, float] | None = None,
     count_dihedrals: bool = True,
 ) -> float:
     if _canonical_dihedral(t) not in graph_dihedral_keys:
         return 10.0
     _i, j, k, _l = t
     eg = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
-    template_weight = 10.0 if eg == "r_a" else 40.0
+    template_weight = (harmonic_groups or {}).get(eg, 10.0 if eg == "r_a" else 40.0)
     count = central_counts.get((min(j, k), max(j, k), eg), 1) if count_dihedrals else 1
     return template_weight / count
 
@@ -1607,6 +1804,8 @@ def _case1_topology_sections(
         count_dihedrals=count_dihedrals,
     )
     graph_dihedral_keys = {_canonical_dihedral(t) for t in graph_dihedrals}
+    cosine4_groups = _template_cosine4_dihedral_groups(template_path)
+    harmonic_groups = _template_harmonic_dihedral_groups(template_path)
     # SMOG2 v2.4.5 emits these near-planar ring harmonics one printed ULP
     # away from the direct libm value on macOS. Keep the compatibility shim
     # restricted to the known case-1 topology rows instead of changing the
@@ -1623,6 +1822,13 @@ def _case1_topology_sections(
     angle_rows = sorted(angles, key=lambda t: (t[0], t[1], t[2]))
     dihedral_rows: list[tuple[int, int, int, int, int, float, float, int | None]] = []
     for t in proper_dihedrals:
+        _i, j, k, _l = t
+        eg = _case1_energy_group(atoms, atom_to_residue, atom_names, bond_groups, residue_types, j, k)
+        if eg in cosine4_groups:
+            phase, force, mult = cosine4_groups[eg]
+            count = central_counts.get((min(j, k), max(j, k), eg), 1)
+            dihedral_rows.append((*t, 4, phase, force / count, mult))
+            continue
         raw = _dihedral_degrees(atoms, *t)
         weight = _case1_proper_dihedral_weight(
             t,
@@ -1655,6 +1861,7 @@ def _case1_topology_sections(
             residue_types,
             central_counts,
             graph_dihedral_keys,
+            harmonic_groups=harmonic_groups,
             count_dihedrals=count_dihedrals,
         )
         dihedral_rows.append((*t, 2, raw, weight, None))
@@ -1681,6 +1888,7 @@ def _write_top4scm(
     )
     attrs_by_name = _template_atom_attributes(template_path)
     bond_length_rules = _template_bond_length_rules(template_path)
+    angle_rules = _template_angle_rules(template_path)
     lines = [
         '; SMOG3 topology for Java SCM contact generation',
         '',
@@ -1711,7 +1919,12 @@ def _write_top4scm(
 
     lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
     for i, j, k in angles:
-        lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
+        angle_override = _template_angle_override(atoms, resnames, attrs_by_name, angle_rules, i, j, k)
+        if angle_override is None:
+            theta, force = _angle_degrees(atoms, i, j, k), 80.0
+        else:
+            theta, force = angle_override
+        lines.append(f"{i}\t{j}\t{k}\t1\t {theta:.9e} {force:.9e}")
 
     lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
     for i, j, k, l, func, phi0, weight, mult in dihedral_rows:
@@ -2157,6 +2370,7 @@ def _write_case1_final_top(
     pair_items = _contact_pair_items(atoms, contacts)
     attrs_by_name = _template_atom_attributes(template_path)
     bond_length_rules = _template_bond_length_rules(template_path)
+    angle_rules = _template_angle_rules(template_path)
     contact_bond_specs = _bond_contact_specs(nb_path)
     contact_bond_items: list[tuple[int, int, float | None, dict[str, object]]] = []
     normal_pair_items: list[tuple[int, int, float | None]] = []
@@ -2176,6 +2390,7 @@ def _write_case1_final_top(
             if atom_type not in seen_types:
                 used_types.append(atom_type)
                 seen_types.add(atom_type)
+        used_types = sorted(used_types)
         atomtypes_lines = [
             f' {atom_type:<6} 1.0000   0.000000  A     0.00000e+00   {atomtype_c12:.5e}  '
             for atom_type in used_types
@@ -2241,7 +2456,12 @@ def _write_case1_final_top(
 
     lines.extend(['', '[ angles ]', ';ai\taj\tak\tfunc\t th0(deg)        Ka'])
     for i, j, k in angles:
-        lines.append(f"{i}\t{j}\t{k}\t1\t {_angle_degrees(atoms, i, j, k):.9e} 8.000000000e+01")
+        angle_override = _template_angle_override(atoms, resnames, attrs_by_name, angle_rules, i, j, k)
+        if angle_override is None:
+            theta, force = _angle_degrees(atoms, i, j, k), 80.0
+        else:
+            theta, force = angle_override
+        lines.append(f"{i}\t{j}\t{k}\t1\t {theta:.9e} {force:.9e}")
 
     lines.extend(['', '[ dihedrals ]', ';ai\taj\tak\tal\tfunc\t phi0(deg)       Kd              mult'])
     omit_context = None
@@ -2259,6 +2479,8 @@ def _write_case1_final_top(
                 ) in omit_proper_energy_groups:
                     continue
             lines.append(f"{i}\t{j}\t{k}\t{l}\t{proper_dihedral_func}\t {phi0:.9e} {weight:.9e} {mult}")
+        elif func == 4:
+            lines.append(f"{i}\t{j}\t{k}\t{l}\t4\t {phi0:.9e} {weight:.9e} {mult}")
         else:
             lines.append(f"{i}\t{j}\t{k}\t{l}\t2\t {phi0:.9e} {weight:.9e}")
 
@@ -2551,7 +2773,7 @@ def _generate_contacts_with_scm(
             scm_top,
             atoms,
             extra_bonds,
-            template_path=bif if bif.name == "AA-test.bif" else None,
+            template_path=bif,
             strict_template_bonds=bif.name == "AA-test.bif",
         )
     cmd = [
@@ -3080,7 +3302,15 @@ def main(argv: list[str]) -> int:
             count_dihedrals=bool(ns.dihedralCounting),
             strict_template_bonds=use_testing_template,
             contact_stack_scale=ns.contactStackScale or 1.0,
-            defaults_line="  1      2         no" if model == "AA-nb-cr2" else ("  1      1         no" if use_testing_template or model in {"AA2CG", "AA-BOND", "AA-DIHE", "AA-DIHE4"} else "  1      1         no        1       1"),
+            defaults_line=(
+                "  1      2         no"
+                if model == "AA-nb-cr2"
+                else (
+                    "  1      1         no"
+                    if use_testing_template or model in {"AA2CG", "AA-BOND", "AA-DIHE", "AA-DIHE4"}
+                    else (_template_nb_defaults_line(nb_path) or "  1      1         no        1       1")
+                )
+            ),
             atomtypes_header="; name  mass     charge    ptype  sigma   epsilon" if model == "AA-nb-cr2" else "; name  mass     charge    ptype c6            c12",
             atomtypes_lines=[f" NB_1   1.0000   0.000000  A     {-0.25 / (2 ** (1 / 6)):.5e}  1.00000e-01  "] if model == "AA-nb-cr2" else None,
             pair_mode="sigma_epsilon" if model == "AA-nb-cr2" else "coefficients",
@@ -3132,6 +3362,7 @@ def main(argv: list[str]) -> int:
             template_path=xml_template_path,
             nb_path=xml_nb_path,
             generate_pair_exclusions=dropin_opensmog_v27,
+            contact_stack_scale=ns.contactStackScale or 1.0,
         )
 
     print(f"\nYour Structure-based Model is ready!\n\nFiles generated:\n\t{top}\n\t{coord}\n\t{ndx}\n\t{contacts_path}\n")

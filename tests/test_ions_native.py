@@ -96,3 +96,5 @@ def test_ions_with_template_named_ions_def_and_opensmog_xml(tmp_path: Path):
     assert out_gro.read_text().splitlines()[1].strip() == "3"
     xml_text = out_xml.read_text()
     assert 'type1="MG"' in xml_text or 'type2="MG"' in xml_text
+    assert 'null="0.00000e+00"' not in xml_text
+    assert 'null="0"' in xml_text

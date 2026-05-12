@@ -106,6 +106,30 @@ def test_dropin_detects_shadow_free_template(tmp_path: Path) -> None:
     assert args[args.index("-contactMode") + 1] == "shadow-free"
 
 
+def test_dropin_keeps_glycan_free_contact_group_as_shadow(tmp_path: Path) -> None:
+    template = tmp_path / "AA_glycans_Dodero21.v1"
+    template.mkdir()
+    (template / "glycan.bif").write_text("<?xml version='1.0'?><bif/>", encoding="utf-8")
+    (template / "glycan.nb").write_text("<?xml version='1.0'?><nb/>", encoding="utf-8")
+    (template / "glycan.sif").write_text(
+        """<?xml version='1.0'?>
+<sif>
+<functions><function name="contact_free" directive="pairs"/></functions>
+<settings>
+<Groups><contactGroup name="c"/><contactGroup name="free"/></Groups>
+<Contacts method="shadow" contactDistance="6" shadowRadius="1" shadowRadiusBonded="0.5"/>
+</settings>
+</sif>
+""",
+        encoding="utf-8",
+    )
+
+    args = dropin.translate_smogcheck_args(["-i", "x.pdb", "-t", str(template)])
+
+    assert "-AA" in args
+    assert args[args.index("-contactMode") + 1] == "shadow"
+
+
 def test_dropin_reads_cutoff_stack_scale_from_contact_scaling(tmp_path: Path) -> None:
     template = tmp_path / "temp.bifsif"
     template.mkdir()

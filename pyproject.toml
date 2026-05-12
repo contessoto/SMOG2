@@ -29,6 +29,8 @@ Repository = "https://github.com/smog-server/SMOG2"
 
 [project.scripts]
 smog3 = "smog3.cli:smog3_main"
+smog3-adjustpdb = "smog3.cli:smog_adjustpdb_main"
+smog3-extract = "smog3.cli:smog_extract_main"
 smog3-ions = "smog3.cli:smog_ions_main"
 smog3-parity-direct = "smog3.cli:smog3_parity_direct_main"
 

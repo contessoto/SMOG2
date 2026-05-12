@@ -141,3 +141,9 @@ def main(argv: list[str]) -> int:
 
     print("\n\tSUCCESS: Extraction complete.\n")
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(main(sys.argv[1:]))

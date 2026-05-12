@@ -568,21 +568,52 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "3eao.noligands.top",
+        "3eao.noligands.gro",
+        "3eao.noligands.ndx",
+        "3eao.noligands.contacts"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/3eao.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.bif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.sif",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/sbmMapExact+SEC"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets. The tutorial command omits -OpenSMOG, so this model-generation check compares the generated topology/GRO/NDX/contact files.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/steps.OpenSMOG.AA+newResidue.txt",
+      "workflow_commands": [
+        "awk 'substr($0,18,3)!=\"NAP\" && substr($0,18,3)!=\"FAD\" {print}' 3eao.pdb > 3eao.noligands.pdb",
+        "smog_adjustPDB -i 3eao.noligands.pdb -map sbmMapExact+SEC -removewater -o 3eao.noligands.adjusted.pdb",
+        "smog2 -i 3eao.noligands.adjusted.pdb -t SBM_AA+SEC -dname 3eao.noligands"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/3eao.pdb",
+          "dest": "3eao.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/sbmMapExact+SEC",
+          "dest": "sbmMapExact+SEC"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.b",
+          "dest": "SBM_AA+SEC/SBM_AA+SEC.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.bif",
+          "dest": "SBM_AA+SEC/SBM_AA+SEC.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.nb",
+          "dest": "SBM_AA+SEC/SBM_AA+SEC.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+newResidue/SBM_AA+SEC/SBM_AA+SEC.sif",
+          "dest": "SBM_AA+SEC/SBM_AA+SEC.sif"
+        }
+      ]
     },
     {
       "id": "aa_glycans_tutorial",
@@ -591,23 +622,61 @@
       "model_type": "AA glycans",
       "required_input_files": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/prefusion_with_glycans.pdb",
-        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/run.glycans.py"
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/run.glycans.py",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.bif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.sif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.nb"
       ],
       "input_source": "public tutorial asset download",
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts"
+        "spike.OpenSMOG.AA+glycans.top",
+        "spike.OpenSMOG.AA+glycans.gro",
+        "spike.OpenSMOG.AA+glycans.ndx",
+        "spike.OpenSMOG.AA+glycans.contacts",
+        "spike.OpenSMOG.AA+glycans.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy.",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
+      "notes": "Automated from downloaded public tutorial assets and the public AA_glycans_Dodero21.v1 template archive.",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/prefusion_with_glycans.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/run.glycans.py"
+      ],
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/steps.OpenSMOG.AA+glycans.txt",
+      "workflow_commands": [
+        "smog2 -i prefusion_with_glycans.pdb -t AA_glycans_Dodero21.v1 -OpenSMOG -dname spike.OpenSMOG.AA+glycans"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+glycans/prefusion_with_glycans.pdb",
+          "dest": "prefusion_with_glycans.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.b",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.bif",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.nb",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.sif",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.sif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.extras",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.extras"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.map",
+          "dest": "AA_glycans_Dodero21.v1/AA_glycan_Dodero21.v1.map"
+        }
       ]
     },
     {
@@ -822,19 +891,39 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts"
+        "7k00.OpenSMOG.AA.top",
+        "7k00.OpenSMOG.AA.gro",
+        "7k00.OpenSMOG.AA.ndx",
+        "7k00.OpenSMOG.AA.contacts",
+        "7k00.OpenSMOG.AA.xml",
+        "ribosome.fragment.top",
+        "ribosome.fragment.gro",
+        "ribosome.fragment.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing, smog2, and smog_extract commands, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/7k00.modified.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/keep.ndx",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/run.fragment.py"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Automated from downloaded public tutorial assets. The insertTER prompt is answered with all, as documented by the public tutorial.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/steps.OpenSMOG.AA.largeFragment.txt",
+      "workflow_commands": [
+        "printf 'all\\n' | smog_adjustPDB -i 7k00.modified.pdb -insertTER -removewater -o 7k00.adjusted.pdb",
+        "smog2 -i 7k00.adjusted.pdb -AA -opensmog -dname 7k00.OpenSMOG.AA",
+        "smog_extract -f 7k00.OpenSMOG.AA.top -g 7k00.OpenSMOG.AA.gro -n keep.ndx -of ribosome.fragment.top -og ribosome.fragment.gro -OpenSMOG 7k00.OpenSMOG.AA.xml -OpenSMOGout ribosome.fragment.xml"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/7k00.modified.pdb",
+          "dest": "7k00.modified.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+largeFragment/keep.ndx",
+          "dest": "keep.ndx"
+        }
+      ]
     },
     {
       "id": "checkpoint_many_segment_workflow",
@@ -887,15 +976,46 @@
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "3p63.OpenSMOG.AA+novelLigand.top",
+        "3p63.OpenSMOG.AA+novelLigand.gro",
+        "3p63.OpenSMOG.AA+novelLigand.ndx",
+        "3p63.OpenSMOG.AA+novelLigand.contacts",
+        "3p63.OpenSMOG.AA+novelLigand.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
+      "status": "implemented",
+      "notes": "Automated from downloaded public tutorial assets. The insertTER prompts are answered as documented by the public tutorial: no, no, yes.",
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/steps.OpenSMOG.AA+novelLigand.txt",
+      "workflow_commands": [
+        "printf 'n\\nn\\ny\\n' | smog_adjustPDB -i 3p63.pdb -o 3p63.adjusted.pdb -map sbmMapExact+FES -insertTER",
+        "smog2 -i 3p63.adjusted.pdb -t SBM_AA+novelLigand -OpenSMOG -dname 3p63.OpenSMOG.AA+novelLigand"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/3p63.pdb",
+          "dest": "3p63.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/sbmMapExact+FES",
+          "dest": "sbmMapExact+FES"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/SBM_AA+novelLigand/SBM_AA+novelLigand.b",
+          "dest": "SBM_AA+novelLigand/SBM_AA+novelLigand.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/SBM_AA+novelLigand/SBM_AA+novelLigand.bif",
+          "dest": "SBM_AA+novelLigand/SBM_AA+novelLigand.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/SBM_AA+novelLigand/SBM_AA+novelLigand.nb",
+          "dest": "SBM_AA+novelLigand/SBM_AA+novelLigand.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+novelLigand/SBM_AA+novelLigand/SBM_AA+novelLigand.sif",
+          "dest": "SBM_AA+novelLigand/SBM_AA+novelLigand.sif"
+        }
+      ]
     },
     {
       "id": "public_aa_multiple_contact_types_downloaded",

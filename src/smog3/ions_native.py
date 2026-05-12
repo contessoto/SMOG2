@@ -55,6 +55,13 @@ def _fmt_top_number(value: float) -> str:
     return f"{float(value):g}"
 
 
+def _fmt_xml_number(value: str) -> str:
+    try:
+        return f"{float(value):.5e}"
+    except ValueError:
+        return value
+
+
 def _add_ion_to_top(top_in: Path, top_out: Path, ionnm: str, ionn: int, m: float, q: float, c12: float, c6: float) -> None:
     lines = top_in.read_text().splitlines(keepends=True)
     atomtypes = _section_span(lines, "atomtypes")
@@ -191,7 +198,7 @@ def _write_opensmog_xml_with_ion(xml_in: Path, xml_out: Path, template: Path | N
         if key in existing_pairs:
             continue
         attrs = {"type1": type1, "type2": type2}
-        attrs.update({parameter: value for parameter, value in zip(parameters, values)})
+        attrs.update({parameter: _fmt_xml_number(value) for parameter, value in zip(parameters, values)})
         ET.SubElement(bytype, "nonbond_param", attrs)
         existing_pairs.add(key)
         existing_types.update((type1, type2))
@@ -203,7 +210,7 @@ def _write_opensmog_xml_with_ion(xml_in: Path, xml_out: Path, template: Path | N
             if key in existing_pairs:
                 continue
             attrs = {"type1": other, "type2": ionnm}
-            attrs.update({parameter: "0" for parameter in parameters})
+            attrs.update({parameter: ("0" if parameter == "null" else "0.00000e+00") for parameter in parameters})
             ET.SubElement(bytype, "nonbond_param", attrs)
             existing_pairs.add(key)
 

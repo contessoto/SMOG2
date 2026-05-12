@@ -22,7 +22,16 @@ def test_tutorial_manifest_has_representative_implemented_cases() -> None:
     }:
         assert cases[case_id].implemented
 
-    assert any(case.status == "manual_input_required" for case in cases.values())
+    for case_id in {
+        "aa_modified_residues_tutorial",
+        "aa_glycans_tutorial",
+        "large_system_fragment_tutorial",
+        "public_aa_novel_ligand_downloaded",
+    }:
+        assert cases[case_id].implemented
+        assert cases[case_id].workflow
+
+    assert not any(case.status == "manual_input_required" for case in cases.values())
     assert any(case.status == "not_generation_test" for case in cases.values())
     assert "MISSING_DOWNLOAD" in tutorial_validation.ALL_STATUSES
 
@@ -59,6 +68,15 @@ def test_tutorial_workflow_translates_smog_ions_to_native_runtime() -> None:
 
     assert source_command.startswith("python3 -m smog3.ions_native ")
     assert installed_command.startswith("smog3-ions ")
+
+
+def test_tutorial_workflow_translates_piped_adjustpdb_and_extract() -> None:
+    adjust = "printf 'all\\n' | smog_adjustPDB -i in.pdb -insertTER -o out.pdb"
+    extract = "smog_extract -f a.top -g a.gro -n keep.ndx -of b.top -og b.gro"
+
+    assert "smog3.adjustpdb_native" in tutorial_validation._workflow_candidate_command(adjust, use_installed=False)
+    assert tutorial_validation._workflow_candidate_command(extract, use_installed=False).startswith("python3 -m smog3.extract_native ")
+    assert tutorial_validation._workflow_candidate_command(extract, use_installed=True).startswith("smog3-extract ")
 
 
 def test_tutorial_command_builder_separates_docker_and_local_paths(tmp_path: Path) -> None:

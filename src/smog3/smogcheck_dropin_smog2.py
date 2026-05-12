@@ -101,7 +101,11 @@ def _contact_flags_from_sif(directory: Path) -> list[str]:
         "gaussian" in node.attrib.get("name", "") or "gaussian" in node.attrib.get("func", "")
         for node in root.findall(".//*")
     )
-    if method == "shadow" and has_free_terms:
+    template_name = directory.name.lower()
+    sif_name = sif.name.lower()
+    if method == "shadow" and has_free_terms and (
+        "free" in template_name or "free" in sif_name or template_name in {"temp.bifsif", "temp.cont.bifsif"}
+    ):
         method = "shadow-free"
     if method == "cutoff" and has_gaussian_contacts:
         method = "cutoff-gaussian"
