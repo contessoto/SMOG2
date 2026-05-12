@@ -400,27 +400,75 @@
       "model_type": "AA explicit ions",
       "required_input_files": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/2ci2.pdb",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/steps.OpenSMOG.AA+coulomb.ions.txt",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.bif",
-        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif"
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.b",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.nb",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.ions.def"
       ],
       "input_source": "public tutorial asset download",
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+coulomb+ions.top",
+        "2ci2.OpenSMOG.AA+coulomb+ions.gro",
+        "2ci2.OpenSMOG.AA+coulomb+ions.ndx",
+        "2ci2.OpenSMOG.AA+coulomb+ions.contacts",
+        "2ci2.OpenSMOG.AA+coulomb+ions.xml",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MG.top",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MG.gro",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MG.xml",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MGCL.top",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MGCL.gro",
+        "2ci2.OpenSMOG.AA+coulomb+ions.MGCL.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "exact public tutorial workflow commands; exact topology/contact/index comparison with documented metadata/ULP policy; ion-modified GRO files compare non-ion records exactly and ion species/counts/box because smog_ions places ions stochastically; OpenSMOG XML compares semantic content with nonbond_param order ignored",
+      "status": "implemented",
+      "ion_workflow": true,
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/2ci2.pdb",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/steps.OpenSMOG.AA+coulomb.ions.txt",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.bif",
-        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif"
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.b",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.nb",
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.ions.def"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Simulation script execution is not part of this model-generation validation.",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -o 2ci2.adjusted.pdb -removewater",
+        "smog2 -i 2ci2.adjusted.pdb -t SBM_AA+coulomb+ions -OpenSMOG -dname 2ci2.OpenSMOG.AA+coulomb+ions -center -boxbuffer 5",
+        "smog_ions -t SBM_AA+coulomb+ions -f 2ci2.OpenSMOG.AA+coulomb+ions.top -g 2ci2.OpenSMOG.AA+coulomb+ions.gro -OpenSMOG 2ci2.OpenSMOG.AA+coulomb+ions.xml -of 2ci2.OpenSMOG.AA+coulomb+ions.MG.top -og 2ci2.OpenSMOG.AA+coulomb+ions.MG.gro -OpenSMOGout 2ci2.OpenSMOG.AA+coulomb+ions.MG.xml -ionnm MG -ionn 2",
+        "smog_ions -t SBM_AA+coulomb+ions -f 2ci2.OpenSMOG.AA+coulomb+ions.MG.top -g 2ci2.OpenSMOG.AA+coulomb+ions.MG.gro -OpenSMOG 2ci2.OpenSMOG.AA+coulomb+ions.MG.xml -of 2ci2.OpenSMOG.AA+coulomb+ions.MGCL.top -og 2ci2.OpenSMOG.AA+coulomb+ions.MGCL.gro -OpenSMOGout 2ci2.OpenSMOG.AA+coulomb+ions.MGCL.xml -ionnm CL -ionn 10"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.b",
+          "dest": "SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.bif",
+          "dest": "SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.nb",
+          "dest": "SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif",
+          "dest": "SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.sif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.ions.def",
+          "dest": "SBM_AA+coulomb+ions/SBM_AA+coulomb+ions.ions.def"
+        }
+      ],
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb+ions/steps.OpenSMOG.AA+coulomb.ions.txt"
     },
     {
       "id": "aa_explicit_ions_custom_potentials_tutorial",
@@ -429,25 +477,81 @@
       "model_type": "AA explicit ions custom potentials",
       "required_input_files": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/2ci2.pdb",
-        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/run.ci2.OpenSMOG.AA+custom+ions.py"
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/steps.OpenSMOG.AA+custom+ions.txt",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.bif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.sif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.map",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.ions.def"
       ],
       "input_source": "public tutorial asset download",
       "smog2_args": [],
       "smog3_args": [],
       "expected_outputs": [
-        "model.top",
-        "model.gro",
-        "model.ndx",
-        "model.contacts",
-        "model.xml"
+        "2ci2.OpenSMOG.AA+custom+ions.top",
+        "2ci2.OpenSMOG.AA+custom+ions.gro",
+        "2ci2.OpenSMOG.AA+custom+ions.ndx",
+        "2ci2.OpenSMOG.AA+custom+ions.contacts",
+        "2ci2.OpenSMOG.AA+custom+ions.xml",
+        "2ci2.OpenSMOG.AA+custom+ions.MG.top",
+        "2ci2.OpenSMOG.AA+custom+ions.MG.gro",
+        "2ci2.OpenSMOG.AA+custom+ions.MG.xml",
+        "2ci2.OpenSMOG.AA+custom+ions.MGCL.top",
+        "2ci2.OpenSMOG.AA+custom+ions.MGCL.gro",
+        "2ci2.OpenSMOG.AA+custom+ions.MGCL.xml"
       ],
-      "comparison_policy": "manual tutorial workflow mapping required before automated SMOG2/SMOG3 comparison",
-      "status": "manual_input_required",
+      "comparison_policy": "exact public tutorial workflow commands; exact topology/contact/index comparison with documented metadata/ULP policy; ion-modified GRO files compare non-ion records exactly and ion species/counts/box because smog_ions places ions stochastically; OpenSMOG XML compares semantic content with nonbond_param order ignored",
+      "status": "implemented",
+      "ion_workflow": true,
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/2ci2.pdb",
-        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/run.ci2.OpenSMOG.AA+custom+ions.py"
+        "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/steps.OpenSMOG.AA+custom+ions.txt",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.bif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.sif",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.map",
+        "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.ions.def"
       ],
-      "notes": "Public tutorial assets are fetched, but this tutorial uses custom template/script steps that need explicit SMOG3 CLI mapping before automated output comparison is trustworthy."
+      "notes": "Simulation script execution is not part of this model-generation validation.",
+      "workflow_commands": [
+        "smog_adjustPDB -i 2ci2.pdb -map AA_ions_Wang22.v1/AA_ions_Wang22.v1.map -removewater -o 2ci2.adjusted.pdb",
+        "smog2 -i 2ci2.adjusted.pdb -t AA_ions_Wang22.v1 -OpenSMOG -dname 2ci2.OpenSMOG.AA+custom+ions -center -boxbuffer 10",
+        "smog_ions -t AA_ions_Wang22.v1 -f 2ci2.OpenSMOG.AA+custom+ions.top -g 2ci2.OpenSMOG.AA+custom+ions.gro -OpenSMOG 2ci2.OpenSMOG.AA+custom+ions.xml -of 2ci2.OpenSMOG.AA+custom+ions.MG.top -og 2ci2.OpenSMOG.AA+custom+ions.MG.gro -OpenSMOGout 2ci2.OpenSMOG.AA+custom+ions.MG.xml -ionnm MG -ionn 2",
+        "smog_ions -t AA_ions_Wang22.v1 -f 2ci2.OpenSMOG.AA+custom+ions.MG.top -g 2ci2.OpenSMOG.AA+custom+ions.MG.gro -OpenSMOG 2ci2.OpenSMOG.AA+custom+ions.MG.xml -of 2ci2.OpenSMOG.AA+custom+ions.MGCL.top -og 2ci2.OpenSMOG.AA+custom+ions.MGCL.gro -OpenSMOGout 2ci2.OpenSMOG.AA+custom+ions.MGCL.xml -ionnm CL -ionn 10"
+      ],
+      "workflow_input_files": [
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/2ci2.pdb",
+          "dest": "2ci2.pdb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.b",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.b"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.bif",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.bif"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.extras",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.extras"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.ions.def",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.ions.def"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.map",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.map"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.nb",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.nb"
+        },
+        {
+          "source": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1/AA_ions_Wang22.v1.sif",
+          "dest": "AA_ions_Wang22.v1/AA_ions_Wang22.v1.sif"
+        }
+      ],
+      "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+custom+ions/steps.OpenSMOG.AA+custom+ions.txt"
     },
     {
       "id": "aa_modified_residues_tutorial",

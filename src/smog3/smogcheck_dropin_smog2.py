@@ -70,6 +70,8 @@ def _template_flags(template: str, *, cg: bool = False) -> list[str]:
         if model == "-AAMATCH":
             flags.extend(_match_flags_from_nb(path))
         return flags
+    if bif_path is not None:
+        return ["-AA", *dynamic_template_flags, *_contact_flags_from_sif(path)]
     return []
 
 

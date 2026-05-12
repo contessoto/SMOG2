@@ -38,6 +38,29 @@ def test_tutorial_opensmog_cases_use_supported_xml_flags() -> None:
     assert ca.raw["smog3_args"] == ["-CA", "-OpenSMOG", "-OpenSMOGxml", "{model_xml}"]
 
 
+def test_explicit_ion_tutorials_are_workflow_automated() -> None:
+    cases = {case.case_id: case for case in tutorial_validation.tutorial_cases()}
+    for case_id in {
+        "aa_explicit_ions_coulomb_tutorial",
+        "aa_explicit_ions_custom_potentials_tutorial",
+    }:
+        case = cases[case_id]
+        assert case.implemented
+        assert case.workflow
+        assert case.raw.get("ion_workflow") is True
+        assert sum(1 for command in case.raw["workflow_commands"] if command.startswith("smog_ions ")) == 2
+
+
+def test_tutorial_workflow_translates_smog_ions_to_native_runtime() -> None:
+    command = "smog_ions -f a.top -g a.gro -of b.top -og b.gro -ionnm MG -ionn 2"
+
+    source_command = tutorial_validation._workflow_candidate_command(command, use_installed=False)
+    installed_command = tutorial_validation._workflow_candidate_command(command, use_installed=True)
+
+    assert source_command.startswith("python3 -m smog3.ions_native ")
+    assert installed_command.startswith("smog3-ions ")
+
+
 def test_tutorial_command_builder_separates_docker_and_local_paths(tmp_path: Path) -> None:
     case = {case.case_id: case for case in tutorial_validation.tutorial_cases()}["aa_user_contacts_ci2"]
     context = {

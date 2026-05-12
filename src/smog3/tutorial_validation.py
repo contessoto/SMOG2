@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .parity_direct import _compare_file, compare_existing_dirs
+from .parity_direct import _compare_file, _drop_top_header_metadata, compare_existing_dirs
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = ROOT / "validation" / "tutorials" / "tutorial_manifest.yml"
@@ -164,6 +164,119 @@ def _xml_status(path: Path) -> dict[str, Any]:
     return {"exists": True, "parse_ok": True, "root": root.tag}
 
 
+def _gro_atom_records(path: Path) -> tuple[str, list[str], str] | None:
+    lines = _read_lines(path)
+    if len(lines) < 3:
+        return None
+    try:
+        count = int(lines[1].strip())
+    except ValueError:
+        return None
+    if len(lines) < count + 3:
+        return None
+    return lines[0], lines[2 : 2 + count], lines[2 + count]
+
+
+def _gro_residue_name(line: str) -> str:
+    return line[5:10].strip()
+
+
+def _gro_coordinates(line: str) -> tuple[float, float, float] | None:
+    try:
+        return float(line[20:28]), float(line[28:36]), float(line[36:44])
+    except ValueError:
+        return None
+
+
+def _compare_ion_gro(left: Path, right: Path) -> dict[str, Any]:
+    left_records = _gro_atom_records(left)
+    right_records = _gro_atom_records(right)
+    if left_records is None or right_records is None:
+        return _compare_file(left, right)
+    _left_header, left_atoms, left_box = left_records
+    _right_header, right_atoms, right_box = right_records
+    if len(left_atoms) != len(right_atoms):
+        return {"match": False, "reason": "GRO atom count differs"}
+    if left_box != right_box:
+        return {"match": False, "reason": "GRO box line differs"}
+
+    ion_names = {"CL", "K", "MG", "NA"}
+    left_non_ions = [line for line in left_atoms if _gro_residue_name(line) not in ion_names]
+    right_non_ions = [line for line in right_atoms if _gro_residue_name(line) not in ion_names]
+    if left_non_ions != right_non_ions:
+        return {"match": False, "reason": "non-ion GRO atom records differ", "diff": _first_diff(left, right)}
+
+    left_ions = Counter(_gro_residue_name(line) for line in left_atoms if _gro_residue_name(line) in ion_names)
+    right_ions = Counter(_gro_residue_name(line) for line in right_atoms if _gro_residue_name(line) in ion_names)
+    if left_ions != right_ions:
+        return {"match": False, "reason": "ion species/counts differ", "baseline_ions": dict(left_ions), "candidate_ions": dict(right_ions)}
+
+    box = [float(value) for value in right_box.split()[:3]]
+    for line in right_atoms:
+        if _gro_residue_name(line) not in ion_names:
+            continue
+        coords = _gro_coordinates(line)
+        if coords is None or any(not (0.0 <= coord <= box[idx]) for idx, coord in enumerate(coords)):
+            return {"match": False, "reason": "candidate ion coordinate outside finite box", "line": line}
+    return {
+        "match": True,
+        "ignored": "smog_ions places ions stochastically; compared non-ion GRO records exactly, ion species/counts exactly, and candidate ion coordinates inside the same box",
+        "ion_counts": dict(right_ions),
+    }
+
+
+def _xml_signature(node: ET.Element) -> tuple[Any, ...]:
+    text = (node.text or "").strip()
+    children = [_xml_signature(child) for child in list(node)]
+    if node.tag == "nonbond_bytype":
+        fixed = [child for child in children if child[0] != "nonbond_param"]
+        params = sorted(child for child in children if child[0] == "nonbond_param")
+        children = fixed + params
+    return (node.tag, tuple(sorted(node.attrib.items())), text, tuple(children))
+
+
+def _compare_xml_semantic(left: Path, right: Path) -> dict[str, Any]:
+    if not left.exists() or not right.exists():
+        return _compare_file(left, right)
+    try:
+        left_sig = _xml_signature(ET.parse(left).getroot())
+        right_sig = _xml_signature(ET.parse(right).getroot())
+    except ET.ParseError as exc:
+        return {"match": False, "reason": f"XML parse error: {exc}"}
+    if left_sig == right_sig:
+        return {"match": True, "ignored": "OpenSMOG XML comments/whitespace and nonbond_param order"}
+    return {"match": False, "reason": "OpenSMOG XML semantic content differs", "diff": _first_diff(left, right)}
+
+
+def _normalize_atomtype_layout(lines: list[str]) -> list[str]:
+    normalized: list[str] = []
+    section: str | None = None
+    for line in lines:
+        name = line.strip()
+        if name.startswith("[") and name.endswith("]"):
+            section = name.strip("[]").strip()
+            normalized.append(f"[ {section} ]")
+            continue
+        if section == "atomtypes" and line.strip() and not line.lstrip().startswith(";"):
+            normalized.append("\t".join(line.split()))
+        else:
+            normalized.append(line)
+    return normalized
+
+
+def _compare_ion_top(left: Path, right: Path) -> dict[str, Any]:
+    standard = _compare_file(left, right)
+    if standard.get("match"):
+        return standard
+    if not left.exists() or not right.exists():
+        return standard
+    left_norm = _normalize_atomtype_layout(_read_lines(left))
+    right_norm = _normalize_atomtype_layout(_read_lines(right))
+    if _normalize_atomtype_layout(_drop_top_header_metadata(left_norm)) == _normalize_atomtype_layout(_drop_top_header_metadata(right_norm)):
+        return {"match": True, "ignored": "topology header metadata and atomtypes whitespace rewritten by smog_ions"}
+    return standard
+
+
 def _file_diagnostics(baseline_dir: Path, candidate_dir: Path, outputs: list[str]) -> dict[str, Any]:
     diagnostics: dict[str, Any] = {}
     for name in outputs:
@@ -193,9 +306,10 @@ def _file_diagnostics(baseline_dir: Path, candidate_dir: Path, outputs: list[str
     return diagnostics
 
 
-def _compare_outputs(baseline_dir: Path, candidate_dir: Path, outputs: list[str]) -> dict[str, Any]:
+def _compare_outputs(baseline_dir: Path, candidate_dir: Path, outputs: list[str], case: TutorialCase | None = None) -> dict[str, Any]:
     standard = {"model.top", "model.gro", "model.ndx", "model.contacts", "model.xml"}
-    if set(outputs).issubset(standard):
+    ion_workflow = bool(case and case.raw.get("ion_workflow"))
+    if set(outputs).issubset(standard) and not ion_workflow:
         report = compare_existing_dirs(baseline_dir, candidate_dir, include_xml="model.xml" in outputs)
         report["comparisons"] = {name: report["comparisons"][name] for name in outputs}
         report["ok"] = all(item.get("match") for item in report["comparisons"].values())
@@ -205,7 +319,14 @@ def _compare_outputs(baseline_dir: Path, candidate_dir: Path, outputs: list[str]
     for name in outputs:
         left = baseline_dir / name
         right = candidate_dir / name
-        comparisons[name] = _compare_file(left, right)
+        if ion_workflow and Path(name).suffix == ".gro":
+            comparisons[name] = _compare_ion_gro(left, right)
+        elif ion_workflow and Path(name).suffix == ".xml":
+            comparisons[name] = _compare_xml_semantic(left, right)
+        elif ion_workflow and Path(name).suffix == ".top":
+            comparisons[name] = _compare_ion_top(left, right)
+        else:
+            comparisons[name] = _compare_file(left, right)
     return {
         "baseline_dir": str(baseline_dir),
         "candidate_dir": str(candidate_dir),
@@ -347,11 +468,17 @@ def _workflow_smog3_command(_use_installed: bool) -> str:
     return "python3 -m smog3.smogcheck_dropin_smog2"
 
 
+def _workflow_ions_command(use_installed: bool) -> str:
+    return "smog3-ions" if use_installed else "python3 -m smog3.ions_native"
+
+
 def _workflow_candidate_command(command: str, use_installed: bool) -> str:
     if command.startswith("smog_adjustPDB "):
         return command.replace("smog_adjustPDB", _workflow_adjust_command(), 1)
     if command.startswith("smog2 "):
         return command.replace("smog2", _workflow_smog3_command(use_installed), 1)
+    if command.startswith("smog_ions "):
+        return command.replace("smog_ions", _workflow_ions_command(use_installed), 1)
     return command
 
 
@@ -492,20 +619,20 @@ def _run_case(
 
     if brc != 0:
         status = "SMOG2_ERROR"
-        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs)
+        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs, case)
     elif smog2_only:
         generated = _generation_outputs_exist(baseline_dir, case.expected_outputs)
         status = "PASS" if generated else "SMOG2_ERROR"
         comparison = {"ok": generated, "mode": "smog2_only_generation_check", "comparisons": {}}
     elif crc != 0:
         status = "SMOG3_ERROR"
-        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs)
+        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs, case)
     elif smog3_only or not with_smog2_baseline:
         generated = _generation_outputs_exist(candidate_dir, case.expected_outputs)
         status = "PASS" if generated else "SMOG3_ERROR"
         comparison = {"ok": generated, "mode": "smog3_only_generation_check", "comparisons": {}}
     else:
-        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs)
+        comparison = _compare_outputs(baseline_dir, candidate_dir, case.expected_outputs, case)
         status = "PASS" if comparison.get("ok") else "DIFF"
 
     report = {

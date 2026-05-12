@@ -895,13 +895,23 @@ def _box_dimensions_nm(atoms, boxbuffer_nm: float = 1.0) -> tuple[float, float, 
     )
 
 
-def _write_gro(path: Path, atoms):
+def _write_gro(path: Path, atoms, *, boxbuffer_nm: float = 1.0, center: bool = False):
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
-    box = _box_dimensions_nm(atoms)
+    box = _box_dimensions_nm(atoms, boxbuffer_nm=boxbuffer_nm)
+    if center:
+        min_x = min(a[4] for a in atoms) * 0.10
+        min_y = min(a[5] for a in atoms) * 0.10
+        min_z = min(a[6] for a in atoms) * 0.10
+        shift = (boxbuffer_nm - min_x, boxbuffer_nm - min_y, boxbuffer_nm - min_z)
+    else:
+        shift = (0.0, 0.0, 0.0)
     lines = ["Gro file for a structure based model, generated with SMOG Version 2.4.5", str(len(atoms))]
     for i, (a, resnum, resname) in enumerate(zip(atoms, resnums, resnames), start=1):
-        lines.append(f"{resnum:5d}{resname:<5}{a[1]:>5}{i:5d}{a[4] * 0.10:8.3f}{a[5] * 0.10:8.3f}{a[6] * 0.10:8.3f}")
+        x = a[4] * 0.10 + shift[0]
+        y = a[5] * 0.10 + shift[1]
+        z = a[6] * 0.10 + shift[2]
+        lines.append(f"{resnum:5d}{resname:<5}{a[1]:>5}{i:5d}{x:8.3f}{y:8.3f}{z:8.3f}")
     lines.append(f"{box[0]:g} {box[1]:g} {box[2]:g}")
     path.write_text("\n".join(lines) + "\n")
 
@@ -2728,6 +2738,8 @@ def main(argv: list[str]) -> int:
     p.add_argument("-templateBif", default=None)
     p.add_argument("-templateNb", default=None)
     p.add_argument("-dname", default="smog")
+    p.add_argument("-center", action="store_true")
+    p.add_argument("-boxbuffer", type=float, default=1.0)
     p.add_argument("-o", default=None)
     p.add_argument("-g", default=None)
     p.add_argument("-n", default=None)
@@ -2910,7 +2922,7 @@ def main(argv: list[str]) -> int:
     if ns.g96:
         _write_g96(coord, atoms)
     else:
-        _write_gro(coord, atoms)
+        _write_gro(coord, atoms, boxbuffer_nm=ns.boxbuffer, center=ns.center)
 
     _write_smog2_like_ndx(ndx, atoms, include_chain_groups=include_chain_groups)
 

@@ -152,6 +152,28 @@ def test_dropin_translates_public_template_directory_files(tmp_path: Path) -> No
     assert args[args.index("-contactMode") + 1] == "shadow"
 
 
+def test_dropin_translates_unknown_public_aa_template_directory(tmp_path: Path) -> None:
+    template = tmp_path / "AA_ions_Wang22.v1"
+    template.mkdir()
+    (template / "AA_ions_Wang22.v1.bif").write_text("<bif />\n", encoding="utf-8")
+    (template / "AA_ions_Wang22.v1.nb").write_text("<nb />\n", encoding="utf-8")
+    (template / "AA_ions_Wang22.v1.sif").write_text(
+        """<?xml version='1.0'?>
+<sif><settings>
+<Contacts method="shadow" contactDistance="6" shadowRadius="1" shadowRadiusBonded="0.5"/>
+</settings></sif>
+""",
+        encoding="utf-8",
+    )
+
+    args = dropin.translate_smogcheck_args(["-i", "x.pdb", "-t", str(template)])
+
+    assert "-AA" in args
+    assert args[args.index("-templateBif") + 1] == str(template / "AA_ions_Wang22.v1.bif")
+    assert args[args.index("-templateNb") + 1] == str(template / "AA_ions_Wang22.v1.nb")
+    assert args[args.index("-contactMode") + 1] == "shadow"
+
+
 def test_dropin_uses_tcg_template_as_final_model_template(tmp_path: Path) -> None:
     aa_template = tmp_path / "SBM_AA"
     ca_template = tmp_path / "SBM_CA+customNonbonded"
