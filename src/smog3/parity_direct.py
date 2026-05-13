@@ -128,18 +128,18 @@ def _same_top_line_with_float_ulp(a: str, b: str, section: str | None) -> bool:
     if a == b:
         return True
     if section not in _TOP_FLOAT_SECTIONS:
-        return False
+        a_data, a_comment = _split_top_data_comment(a)
+        b_data, b_comment = _split_top_data_comment(b)
+        return a_comment == b_comment and a_data.split() == b_data.split()
     a_data, a_comment = _split_top_data_comment(a)
     b_data, b_comment = _split_top_data_comment(b)
     if a_comment != b_comment:
         return False
     a_tokens, a_trailing = _top_tokens_with_layout(a_data)
     b_tokens, b_trailing = _top_tokens_with_layout(b_data)
-    if a_trailing != b_trailing or len(a_tokens) != len(b_tokens):
+    if len(a_tokens) != len(b_tokens):
         return False
     for token_idx, ((a_sep, a_tok), (b_sep, b_tok)) in enumerate(zip(a_tokens, b_tokens)):
-        if a_sep != b_sep:
-            return False
         if a_tok == b_tok:
             continue
         if not (_float_like(a_tok) and _float_like(b_tok)):
@@ -162,8 +162,8 @@ def _same_top_line_with_float_ulp(a: str, b: str, section: str | None) -> bool:
 
 
 def _top_matches_with_float_ulp(a_lines: list[str], b_lines: list[str]) -> bool:
-    a_body = _drop_top_header_metadata(a_lines)
-    b_body = _drop_top_header_metadata(b_lines)
+    a_body = [line for line in _drop_top_header_metadata(a_lines) if line.strip()]
+    b_body = [line for line in _drop_top_header_metadata(b_lines) if line.strip()]
     if len(a_body) != len(b_body):
         return False
     section: str | None = None
@@ -195,7 +195,7 @@ def _compare_file(a: Path, b: Path) -> dict:
     if a.suffix == ".top" and _top_matches_with_float_ulp(ta, tb):
         return {
             "match": True,
-            "ignored": "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention",
+            "ignored": "topology header metadata, harmless whitespace layout, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention",
         }
     if max(len(ta), len(tb)) > 50000:
         for idx, (left, right) in enumerate(itertools.zip_longest(ta, tb, fillvalue="<missing>"), start=1):

@@ -56,17 +56,88 @@ def _parse_map(path: Path) -> MapRules:
     return rules
 
 
+_NUCLEIC_RESIDUES = {
+    "A", "C", "G", "U", "I",
+    "DA", "DC", "DG", "DT", "DI",
+    "ADE", "CYT", "GUA", "URA", "THY",
+}
+
+_AMINO_RESIDUES = {
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+}
+
+_DEFAULT_RESIDUE_RENAMES = {
+    "1MG": "G",
+    "2MG": "G",
+    "OMG": "G",
+    "MEQ": "ALA",
+    "2MA": "A",
+    "MA6": "A",
+    "4OC": "C",
+    "5MC": "C",
+    "OMC": "C",
+    "5MU": "U",
+    "D2T": "ASP",
+    "H2U": "U",
+    "OMU": "U",
+    "UR3": "U",
+}
+
+
+def _smog2_default_residue_name(resn: str) -> str:
+    return _DEFAULT_RESIDUE_RENAMES.get(resn.upper(), resn)
+
+
+def _smog2_default_atom_name(resn: str, atom_name: str) -> str:
+    """Apply the built-in SMOG2 nucleic-acid atom-name compatibility map.
+
+    SMOG2's ``smog_adjustPDB`` converts common PDB v3 nucleic names such as
+    ``OP1``/``O5'`` to the template-era names ``O1P``/``O5*`` even when no
+    explicit ``-map`` file is supplied.  Large-system and tutorial workflows
+    depend on those names because the AA templates encode nucleic geometry with
+    the star/phosphate aliases.
+    """
+
+    base = _base_residue_name(resn).upper()
+    if base not in _NUCLEIC_RESIDUES:
+        return atom_name
+    phosphate = {"OP1": "O1P", "OP2": "O2P", "OP3": "O3P"}
+    if atom_name in phosphate:
+        return phosphate[atom_name]
+    return atom_name.replace("'", "*")
+
+
+def _smog2_default_terminal_residue_name(
+    resn: str,
+    atom_names: set[str],
+    *,
+    first_residue: bool,
+    last_residue: bool,
+) -> str:
+    """Apply SMOG2's built-in terminal residue aliases for adjusted PDBs."""
+
+    base = _base_residue_name(resn).upper()
+    if last_residue and base in _AMINO_RESIDUES and "OXT" in atom_names:
+        return f"{base}T"
+    if first_residue and base in _NUCLEIC_RESIDUES and "P" not in atom_names:
+        return f"{base}0P"
+    if base in _AMINO_RESIDUES and atom_names == {"N", "CA", "C", "O", "CB"}:
+        return "ALA"
+    return resn
+
+
 def _read_insert_ter_answer() -> str:
     answer = sys.stdin.readline()
     return answer.strip().lower()
 
 
-def _should_insert_ter(previous: tuple[str, int] | None, current: tuple[str, int], insert_all: bool) -> tuple[bool, bool]:
+def _should_insert_ter(previous: tuple[str, int, str] | None, current: tuple[str, int, str], insert_all: bool) -> tuple[bool, bool]:
     if previous is None:
         return False, insert_all
-    prev_chain, prev_resi = previous
-    chain, resi = current
-    nonsequential = chain != prev_chain or resi != prev_resi + 1
+    prev_chain, prev_resi, _prev_icode = previous
+    chain, resi, _icode = current
+    nonsequential = chain != prev_chain or (resi != prev_resi and resi != prev_resi + 1)
     if not nonsequential:
         return False, insert_all
     if insert_all:
@@ -77,8 +148,8 @@ def _should_insert_ter(previous: tuple[str, int] | None, current: tuple[str, int
     return answer.startswith("y"), insert_all
 
 
-def _fmt_atom(serial: int, name: str, altloc: str, resn: str, chain: str, resi: int, x: float, y: float, z: float, elem: str, rec: str="ATOM") -> str:
-    return f"{rec:<6}{serial:>5d} {name:>4}{altloc:1}{resn:<4}{chain:1}{resi:>4d}    {x:>8.3f}{y:>8.3f}{z:>8.3f}  1.00  0.00          {elem:>2}"
+def _fmt_atom(serial: int, name: str, altloc: str, resn: str, chain: str, resi: int, icode: str, x: float, y: float, z: float, elem: str, rec: str="ATOM") -> str:
+    return f"{rec:<6}{serial:>5d} {name:>4}{altloc:1}{resn:<4}{chain:1}{resi:>4d}{icode:1}   {x:>8.3f}{y:>8.3f}{z:>8.3f}  1.00  0.00          {elem:>2}"
 
 
 def main(argv: list[str]) -> int:
@@ -108,13 +179,15 @@ def main(argv: list[str]) -> int:
     cur_res = None
     res_out = 0
     lines = Path(ns.i).read_text().splitlines()
-    previous_residue: tuple[str, int] | None = None
+    previous_residue: tuple[str, int, str] | None = None
     insert_all_ter = False
     pending_ter = False
+    pending_ter_after_skipped = False
+    skipped_since_output = False
     for ln in lines:
         if ln.startswith("TER"):
             pending_ter = True
-            previous_residue = None
+            pending_ter_after_skipped = skipped_since_output
             continue
         if not (ln.startswith("ATOM") or ln.startswith("HETATM")):
             continue
@@ -125,25 +198,37 @@ def main(argv: list[str]) -> int:
         resn = ln[17:20].strip()
         chain = ln[21:22]
         resi = int(ln[22:26])
+        icode = ln[26:27]
         x = float(ln[30:38]); y = float(ln[38:46]); z = float(ln[46:54])
         elem = (ln[76:78].strip() or name[:1]).upper()
 
         if ns.removewater and resn in {"HOH", "WAT", "SOL"}:
+            skipped_since_output = True
             continue
         if ns.removeH and (elem == "H" or name.startswith("H")):
+            skipped_since_output = True
             continue
         if not ns.altloc and altloc not in {" ", "A"}:
+            skipped_since_output = True
             continue
 
-        original_residue = (chain, resi)
-        ter_before = pending_ter
+        original_residue = (chain, resi, icode)
+        ter_before = 1 if pending_ter else 0
+        if pending_ter and pending_ter_after_skipped and ns.insertTER:
+            ter_before = 2
         reset_before = pending_ter
         pending_ter = False
+        pending_ter_after_skipped = False
         if ns.insertTER and not ter_before and previous_residue != original_residue:
             ter_before, insert_all_ter = _should_insert_ter(previous_residue, original_residue, insert_all_ter)
+            ter_before = 1 if ter_before else 0
             reset_before = False
         previous_residue = original_residue
+        skipped_since_output = False
 
+        if ns.map is None or ns.default:
+            resn = _smog2_default_residue_name(resn)
+            name = _smog2_default_atom_name(resn, name)
         name = rules.global_atom_renames.get(name, name)
         key = (resn, name)
         if key in rules.atom_mapping:
@@ -154,29 +239,36 @@ def main(argv: list[str]) -> int:
         else:
             sort_key = (len(recs),)
 
-        recs.append([sort_key, rec, serial, name, altloc if ns.altloc else " ", resn, chain, resi, x, y, z, elem, ter_before, reset_before])
+        recs.append([sort_key, rec, serial, name, altloc if ns.altloc else " ", resn, chain, resi, icode, x, y, z, elem, ter_before, reset_before])
 
     recs.sort(key=lambda t: t[0])
 
-    residue_order: list[tuple[str, int, int]] = []
+    residue_order: list[tuple[str, int, str, int]] = []
     segment = 0
-    seen_residues: set[tuple[str, int, int]] = set()
+    seen_residues: set[tuple[str, int, str, int]] = set()
     for row in recs:
-        if row[12]:
-            segment += 1
-        key = (str(row[6]), int(row[7]), segment)
+        if row[13]:
+            segment += int(row[13])
+        key = (str(row[6]), int(row[7]), str(row[8]), segment)
         if key not in seen_residues:
             residue_order.append(key)
             seen_residues.add(key)
     first_residues = set()
     last_residues = set()
-    by_segment: dict[int, list[tuple[str, int, int]]] = {}
+    by_segment: dict[int, list[tuple[str, int, str, int]]] = {}
     for key in residue_order:
-        by_segment.setdefault(key[2], []).append(key)
+        by_segment.setdefault(key[3], []).append(key)
     for items in by_segment.values():
         if items:
             first_residues.add(items[0])
             last_residues.add(items[-1])
+    atom_names_by_residue: dict[tuple[str, int, str, int], set[str]] = {}
+    segment = 0
+    for row in recs:
+        if row[13]:
+            segment += int(row[13])
+        residue_key = (str(row[6]), int(row[7]), str(row[8]), segment)
+        atom_names_by_residue.setdefault(residue_key, set()).add(str(row[3]))
 
     out_lines = []
     if ns.large:
@@ -184,16 +276,25 @@ def main(argv: list[str]) -> int:
     out_lines.append("REMARK adjusted by smog_adjustPDB (python-native)")
 
     segment = 0
-    for _, rec, serial, name, altloc, resn, chain, resi, x, y, z, elem, ter_before, reset_before in recs:
+    for _, rec, serial, name, altloc, resn, chain, resi, icode, x, y, z, elem, ter_before, reset_before in recs:
         if ter_before:
-            out_lines.append("TER")
-            segment += 1
-            cur_res = None
-            if reset_before:
-                serial_out = 0
-                res_out = 0
-        residue_key = (chain, resi, segment)
+            for _ in range(int(ter_before)):
+                out_lines.append("TER")
+                segment += 1
+                cur_res = None
+                if reset_before:
+                    serial_out = 0
+                    res_out = 0
+        residue_key = (chain, resi, icode, segment)
         base = _base_residue_name(resn)
+        if ns.map is None or ns.default:
+            resn = _smog2_default_terminal_residue_name(
+                resn,
+                atom_names_by_residue.get(residue_key, set()),
+                first_residue=residue_key in first_residues,
+                last_residue=residue_key in last_residues,
+            )
+            base = _base_residue_name(resn)
         if residue_key in first_residues and base in rules.first_residue_names:
             resn = rules.first_residue_names[base]
         if residue_key in last_residues and base in rules.last_residue_names:
@@ -202,10 +303,13 @@ def main(argv: list[str]) -> int:
         if ns.PDBnums:
             res_out = resi
         else:
-            if cur_res != (chain, resi, segment):
+            if cur_res != (chain, resi, icode, segment):
                 res_out += 1
-                cur_res = (chain, resi, segment)
-        out_lines.append(_fmt_atom(serial_out, name, altloc, resn, chain, res_out, x, y, z, elem, rec))
+                cur_res = (chain, resi, icode, segment)
+        out_lines.append(_fmt_atom(serial_out, name, altloc, resn, chain, res_out, " ", x, y, z, elem, rec))
+
+    if ns.insertTER and pending_ter and out_lines and not out_lines[-1].startswith("TER"):
+        out_lines.append("TER")
 
     Path(ns.o).write_text("\n".join(out_lines) + "\n")
     return 0

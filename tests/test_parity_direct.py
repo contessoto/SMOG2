@@ -99,7 +99,7 @@ def test_compare_existing_accepts_only_tiny_top_float_print_ulp(tmp_path: Path):
     report = parity_direct.compare_existing_dirs(b, c)
     assert report["ok"] is True
     assert report["comparisons"]["model.top"]["ignored"] == (
-        "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention"
+        "topology header metadata, harmless whitespace layout, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention"
     )
 
 
@@ -117,7 +117,7 @@ def test_compare_existing_accepts_large_top_float_print_ulp(tmp_path: Path):
 
     assert report["ok"] is True
     assert report["comparisons"]["model.top"]["ignored"] == (
-        "topology header metadata, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention"
+        "topology header metadata, harmless whitespace layout, tiny floating-point print ULPs, and dihedral +/-180 endpoint print convention"
     )
 
 

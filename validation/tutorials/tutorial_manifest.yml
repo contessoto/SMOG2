@@ -300,7 +300,7 @@
       ],
       "comparison_policy": "tutorial workflow comparison: exact public tutorial preprocessing and smog2 command, with documented parity comparator metadata/ULP policy",
       "status": "implemented",
-      "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
+      "notes": "Automated from downloaded public tutorial assets. The public SIF uses nbcutoff, while SMOG2 2.4.5/2.5 schemas accept the same cutoff as r_c; the workflow applies that compatibility rename before running the otherwise public tutorial commands. SMOG3 runs the translated Python-native equivalent with zero Perl.",
       "downloaded_asset_paths": [
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/2ci2.pdb",
         "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.AA+coulomb/SBM_AA+coulomb/SBM_AA+coulomb.bif",
@@ -831,6 +831,7 @@
       "notes": "Automated from downloaded public tutorial assets; SMOG2 baseline uses the exact tutorial command inside Docker, and SMOG3 runs the translated Python-native equivalent with zero Perl.",
       "steps_file": "validation/tutorials/assets/downloads/smog-server.org/tutorials/OpenSMOG.CA+customNonbonded/steps.OpenSMOG.CA+customNonbonded.txt",
       "workflow_commands": [
+        "tmp=$(mktemp) && sed 's/nbcutoff=/r_c=/g' SBM_CA+customNonbonded/CA+customContacts.sif > \"$tmp\" && mv \"$tmp\" SBM_CA+customNonbonded/CA+customContacts.sif",
         "smog_adjustPDB -i 2ci2.pdb -removewater -o 2ci2.adjusted.pdb",
         "smog2 -t SBM_AA -tCG SBM_CA+customNonbonded -i 2ci2.adjusted.pdb -opensmog -dname 2ci2.OpenSMOG.CA+customNonbonded"
       ],
