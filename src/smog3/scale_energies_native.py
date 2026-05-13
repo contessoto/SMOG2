@@ -1,3 +1,10 @@
+"""Native implementation of SMOG energy-scaling topology edits.
+
+This runtime helper rescales selected contact and dihedral terms using GROMACS
+topology/NDX files.  It preserves SMOG2-compatible topology structure while
+performing the edits directly in Python.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,6 +16,8 @@ from .gmx import parse_ndx, parse_top_sections, write_top_sections
 
 @dataclass
 class ScaleConfig:
+    """Configuration for one scale-energies operation."""
+
     group_d: str
     group_c1: str
     group_c2: str
@@ -102,6 +111,8 @@ def _scale_exclusion_line(line: str, g1: set[int], g2: set[int], factor: float) 
 
 
 def scale_topology(top_in: str | Path, ndx_in: str | Path, top_out: str | Path, cfg: ScaleConfig) -> None:
+    """Rescale topology pairs/dihedrals selected by NDX groups."""
+
     groups = parse_ndx(ndx_in)
     dg = set(groups[cfg.group_d])
     c1 = set(groups[cfg.group_c1])
@@ -122,6 +133,8 @@ def scale_topology(top_in: str | Path, ndx_in: str | Path, top_out: str | Path, 
 
 
 def main(argv: list[str]) -> int:
+    """Command-line entry point for native energy scaling."""
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-f", default="smog.top")
     p.add_argument("-n", default="smog.ndx")

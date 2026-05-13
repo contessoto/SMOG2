@@ -1,3 +1,13 @@
+"""Python-native SMOG2-compatible model generation.
+
+This is the main SMOG3 runtime module used by the public ``smog3`` console
+command.  It parses PDB inputs, writes SMOG2-compatible GRO/G96, NDX, topology,
+contacts, and OpenSMOG XML outputs, and invokes the bundled Java ``SCM.jar`` for
+shadow-contact generation where SMOG2 does the same.  Normal runtime in this
+module is intentionally Python plus Java only: it does not call Perl, SMOG2,
+Docker, or the legacy ``src/smogv2`` program.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -1327,6 +1337,13 @@ def _gro_field_number(value: int) -> int:
 
 
 def _write_gro(path: Path, atoms, *, boxbuffer_nm: float = 1.0, center: bool = False):
+    """Write a SMOG2-style GROMACS ``.gro`` coordinate file.
+
+    ``atoms`` are the parsed runtime atom records in Angstrom coordinates.  The
+    writer converts to nm, optionally centers coordinates in a buffered box, and
+    wraps residue/atom number fields the way SMOG2 does for large systems.
+    """
+
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
     box = _box_dimensions_nm(atoms, boxbuffer_nm=boxbuffer_nm)
@@ -2365,6 +2382,15 @@ def _write_ca_final_top(
     include_exclusions: bool = True,
     template_path: Path | None = None,
 ):
+    """Write the final C-alpha GROMACS topology used by SMOG3 runtime.
+
+    The generated sections include ``[ atoms ]``, covalent ``[ bonds ]``,
+    ``[ angles ]``, C-alpha dihedrals, native-contact ``[ pairs ]``, optional
+    ``[ exclusions ]``, and system/molecule trailers.  When a custom template is
+    supplied, residue atom attributes such as nonbonded types are read from that
+    template instead of being hardcoded.
+    """
+
     resnums = _smog2_residue_numbers(atoms)
     resnames = _smog2_residue_names(atoms)
     bonds, angles, dihedral_rows = _ca_bonded_sections(atoms, extra_bonds, dihedral_strength=dihedral_strength)
@@ -3047,6 +3073,13 @@ def _chain_atom_groups(atoms) -> list[tuple[str, list[int]]]:
 
 
 def _write_smog2_like_ndx(path: Path, atoms, *, include_chain_groups: bool):
+    """Write NDX groups in the format expected by SMOG2 and Java SCM.
+
+    For SCM input this emits numbered per-chain groups preserving SMOG2 atom
+    numbering and TER-derived chain segmentation.  Otherwise it writes the
+    single ``System`` group used by simple runtime outputs.
+    """
+
     if include_chain_groups:
         lines = []
         for ci, (_chain, vals) in enumerate(_chain_atom_groups(atoms), start=1):
@@ -3259,6 +3292,15 @@ Common generation options:
 
 
 def main(argv: list[str]) -> int:
+    """Run the native SMOG3 implementation of the SMOG2 model generator.
+
+    ``argv`` accepts the SMOG2-compatible command-line subset used by
+    SMOG-CHECK and public tutorials.  The function writes requested topology,
+    coordinate, index, contact, and optional OpenSMOG XML files and returns a
+    process-style exit code.  Contact generation uses Java SCM when required and
+    never falls back to Perl.
+    """
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-i", required=False)
     p.add_argument("-AA", action="store_true")

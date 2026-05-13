@@ -23,6 +23,7 @@ run_step() {
 run_step "Python tests" env PYTHONPATH=src pytest -q tests
 run_step "Selected two-stage parity" bash scripts/run_selected_two_stage_parity.sh
 run_step "Drop-in SMOG-CHECK 1-115" bash scripts/run_smogcheck_dropin_smog3.sh 1 115
+run_step "Public tutorial validation" bash scripts/run_all_tutorials_compare.sh --all --download-first
 
 echo
 echo "All SMOG3 validation steps passed."

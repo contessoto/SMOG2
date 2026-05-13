@@ -1,7 +1,7 @@
 {
   "asset_root": "validation/tutorials/assets",
-  "download_count": 98,
-  "generated_at": "2026-05-12T09:53:20-0500",
+  "download_count": 100,
+  "generated_at": "2026-05-13T14:32:20-0500",
   "max_mb": 100,
   "max_pages": 250,
   "page_count": 36,
@@ -16,6 +16,28 @@
       "source_page": null,
       "status": "PAGE_SAVED",
       "url": "https://smog-server.org/tutorials/"
+    },
+    {
+      "content_type": "application/x-gzip",
+      "file_type": "tar.gz",
+      "http_status": 200,
+      "local_path": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_ions_Wang22.v1.tar.gz",
+      "note": "extracted 10 members",
+      "size": 22962,
+      "source_page": "https://smog-server.org/tutorials/",
+      "status": "DOWNLOADED",
+      "url": "https://smog-server.org/smog2/template_repo/AA_ions_Wang22.v1.tar.gz"
+    },
+    {
+      "content_type": "application/x-gzip",
+      "file_type": "tar.gz",
+      "http_status": 200,
+      "local_path": "validation/tutorials/assets/downloads/smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1.tar.gz",
+      "note": "extracted 9 members",
+      "size": 13774,
+      "source_page": "https://smog-server.org/tutorials/",
+      "status": "DOWNLOADED",
+      "url": "https://smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1.tar.gz"
     },
     {
       "content_type": "text/html; charset=UTF-8",
@@ -1483,7 +1505,7 @@
   ],
   "start_url": "https://smog-server.org/tutorials/",
   "status_counts": {
-    "DOWNLOADED": 98,
+    "DOWNLOADED": 100,
     "PAGE_SAVED": 36
   }
 }

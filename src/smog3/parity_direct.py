@@ -1,3 +1,12 @@
+"""Direct parity comparison helpers for SMOG2 baseline and SMOG3 candidate runs.
+
+This module is validation-only.  It can run original SMOG2 from a source
+checkout for historical direct checks, or compare existing baseline/candidate
+directories produced by Docker/two-stage runners.  The comparator is strict for
+scientific sections and ignores only documented generated metadata plus tiny
+topology print noise that has already been accepted in the parity policy.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -211,6 +220,14 @@ def _compare_file(a: Path, b: Path) -> dict:
 
 
 def compare_existing_dirs(baseline_dir: Path, candidate_dir: Path, include_xml: bool = False) -> dict:
+    """Compare generated model outputs in two existing directories.
+
+    The expected files are ``model.top``, ``model.gro``, ``model.ndx``, and
+    ``model.contacts``, plus ``model.xml`` when ``include_xml`` is true.  The
+    returned dictionary records per-file match status and an overall ``ok`` flag
+    used by shell validation scripts.
+    """
+
     files = ["model.top", "model.gro", "model.ndx", "model.contacts"] + (["model.xml"] if include_xml else [])
     comps = {f: _compare_file(baseline_dir / f, candidate_dir / f) for f in files}
     return {
@@ -222,6 +239,13 @@ def compare_existing_dirs(baseline_dir: Path, candidate_dir: Path, include_xml: 
 
 
 def run_cases(case_ids: list[int]) -> dict:
+    """Run the legacy direct parity cases from a source checkout.
+
+    This helper is validation-only and depends on local Perl SMOG2 dependencies.
+    Normal SMOG3 runtime does not call this path; release validation now prefers
+    Docker-backed baselines and drop-in SMOG-CHECK runs.
+    """
+
     if not _perl_ready():
         return {"skipped": True, "reason": "Perl dependencies missing (XML::Simple/XML::Validator::Schema/PDL)"}
     report = {"skipped": False, "cases": []}
@@ -241,6 +265,8 @@ def run_cases(case_ids: list[int]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point for direct/existing-directory parity reports."""
+
     p = argparse.ArgumentParser()
     p.add_argument("--cases", default="1,21,41,50,56,94")
     p.add_argument("--report-json", default="parity_report.json")

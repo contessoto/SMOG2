@@ -1,3 +1,12 @@
+"""Python-native subset of SMOG ``smog_adjustPDB`` preprocessing.
+
+The public tutorial workflows use ``smog_adjustPDB`` to remove waters, strip
+hydrogens, insert TER records, normalize nucleic atom names, apply map files,
+and rename terminal/custom residues before model generation.  This runtime
+module implements those preprocessing behaviors directly in Python and never
+calls the legacy Perl tool.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -153,6 +162,13 @@ def _fmt_atom(serial: int, name: str, altloc: str, resn: str, chain: str, resi: 
 
 
 def main(argv: list[str]) -> int:
+    """Run native PDB adjustment and write the adjusted PDB to disk.
+
+    Supported options cover the tutorial and SMOG-CHECK workflows: water/H
+    removal, map-file residue/atom renaming, large-format numbering, insertion
+    of TER records, and SMOG2-compatible default residue normalization.
+    """
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-i", required=False)
     p.add_argument("-o", default="adjusted.pdb")

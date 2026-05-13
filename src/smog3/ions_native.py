@@ -1,3 +1,11 @@
+"""Python-native ion insertion/post-processing for OpenSMOG tutorials.
+
+The public explicit-ion workflows add ion atom types, molecules, GRO atoms, and
+OpenSMOG XML force entries after base model generation.  This module implements
+the needed ``smog_ions`` behavior in Python using template ``ions.def`` data and
+does not call Perl or original SMOG2.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -219,6 +227,8 @@ def _write_opensmog_xml_with_ion(xml_in: Path, xml_out: Path, template: Path | N
 
 
 def main(argv: list[str]) -> int:
+    """Apply native ion additions to topology, GRO, and optional OpenSMOG XML."""
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-f", default="smog.top")
     p.add_argument("-g", default="smog.gro")

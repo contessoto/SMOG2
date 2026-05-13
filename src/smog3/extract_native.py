@@ -1,3 +1,10 @@
+"""Python-native subset of SMOG ``smog_extract``.
+
+This runtime helper extracts atom subsets from GRO, NDX, topology, contacts, and
+OpenSMOG XML files while remapping atom indices consistently.  It is used by
+large-fragment tutorial workflows and does not call Perl or original SMOG2.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +24,8 @@ def _parse_gro(path: Path):
 
 
 def _write_gro(path: Path, header: str, atoms: list[str], box: str):
+    """Write an extracted GRO file with the retained atom lines and box."""
+
     out = [header, str(len(atoms)), *atoms, box]
     path.write_text("\n".join(out) + "\n")
 
@@ -94,6 +103,8 @@ def _write_filtered_opensmog_xml(src: Path, dst: Path, remap: dict[int, int]) ->
 
 
 def main(argv: list[str]) -> int:
+    """Run native extraction for selected NDX groups or distance selections."""
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-f", default="smog.top")
     p.add_argument("-g", default="smog.gro")

@@ -2,7 +2,9 @@
 """Fetch public SMOG tutorial pages and linked model-generation assets.
 
 The crawler starts at https://smog-server.org/tutorials/, follows tutorial-local
-HTML/directory pages, and downloads small linked input/template assets.  It is
+HTML/directory pages, and downloads small linked input/template assets.  A few
+public tutorials reference template-repository directories only in prose, so the
+crawler also seeds those public template directories explicitly.  It is
 deliberately conservative: generated manifests are committed, but downloaded
 public data lives under validation/tutorials/assets/ and is ignored by git.
 """
@@ -13,10 +15,12 @@ import argparse
 import json
 import mimetypes
 import re
+import tarfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections import deque
 from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
@@ -26,6 +30,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_START = "https://smog-server.org/tutorials/"
 DEFAULT_ASSET_ROOT = ROOT / "validation" / "tutorials" / "assets"
 USER_AGENT = "SMOG3 tutorial asset fetcher/0.1 (+https://smog-server.org/tutorials/)"
+ALLOWED_PREFIXES = ("/tutorials", "/smog2/template_repo")
+EXTRA_ASSET_URLS = (
+    "https://smog-server.org/smog2/template_repo/AA_ions_Wang22.v1.tar.gz",
+    "https://smog-server.org/smog2/template_repo/AA_glycans_Dodero21.v1.tar.gz",
+)
 
 DOWNLOAD_EXTENSIONS = {
     ".pdb",
@@ -94,9 +103,9 @@ def _is_sort_query(url: str) -> bool:
     return any(query.startswith(prefix) for prefix in SKIP_QUERY_PREFIXES)
 
 
-def _under_tutorials(url: str, start_host: str) -> bool:
+def _under_allowed_public_assets(url: str, start_host: str) -> bool:
     parsed = urllib.parse.urlsplit(url)
-    return parsed.netloc == start_host and parsed.path.startswith("/tutorials")
+    return parsed.netloc == start_host and parsed.path.startswith(ALLOWED_PREFIXES)
 
 
 def _html_base_url(url: str) -> str:
@@ -146,6 +155,39 @@ def _file_type(url: str, content_type: str | None, is_html: bool) -> str:
     return (guessed or "unknown").lstrip(".")
 
 
+def _is_safe_archive_member(target_root: Path, member_path: Path) -> bool:
+    try:
+        member_path.resolve().relative_to(target_root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _extract_archive(path: Path) -> str:
+    """Extract a downloaded archive beside itself using path-traversal checks."""
+
+    target_root = path.parent
+    extracted = 0
+    suffix = _compound_suffix(path.name)
+    if suffix in {".tar.gz", ".tgz", ".gz"} and tarfile.is_tarfile(path):
+        with tarfile.open(path) as archive:
+            for member in archive.getmembers():
+                dest = target_root / member.name
+                if not _is_safe_archive_member(target_root, dest):
+                    raise RuntimeError(f"unsafe archive member {member.name!r}")
+            archive.extractall(target_root)
+            extracted = len(archive.getmembers())
+    elif suffix == ".zip" and zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            for member in archive.namelist():
+                dest = target_root / member
+                if not _is_safe_archive_member(target_root, dest):
+                    raise RuntimeError(f"unsafe archive member {member!r}")
+            archive.extractall(target_root)
+            extracted = len(archive.namelist())
+    return f"extracted {extracted} members" if extracted else ""
+
+
 def _fetch_url(url: str, source_page: str | None, asset_root: Path, max_bytes: int) -> tuple[FetchRecord, str | None, list[str]]:
     try:
         with urllib.request.urlopen(_request(url), timeout=30) as response:
@@ -179,6 +221,11 @@ def _fetch_url(url: str, source_page: str | None, asset_root: Path, max_bytes: i
         parser = LinkParser()
         parser.feed(data.decode("utf-8", errors="replace"))
         links = parser.links
+    else:
+        try:
+            note = _extract_archive(local_path)
+        except Exception as exc:  # pragma: no cover - exercised by real archives
+            note = f"archive extraction failed: {exc}"
 
     record = FetchRecord(
         url=url,
@@ -189,6 +236,7 @@ def _fetch_url(url: str, source_page: str | None, asset_root: Path, max_bytes: i
         file_type=_file_type(url, content_type, is_html),
         size=len(data),
         status="DOWNLOADED" if not is_html else "PAGE_SAVED",
+        note=note if not is_html else "",
     )
     return record, kind, links
 
@@ -200,6 +248,8 @@ def crawl(start_url: str, asset_root: Path, max_mb: int, max_pages: int) -> dict
     start_host = urllib.parse.urlsplit(start_url).netloc
     max_bytes = max_mb * 1024 * 1024
     queue: deque[tuple[str, str | None]] = deque([(start_url, None)])
+    for extra_url in EXTRA_ASSET_URLS:
+        queue.append((_clean_url(extra_url), start_url))
     seen: set[str] = set()
     records: list[FetchRecord] = []
     page_count = 0
@@ -207,7 +257,7 @@ def crawl(start_url: str, asset_root: Path, max_mb: int, max_pages: int) -> dict
     while queue and page_count < max_pages:
         url, source_page = queue.popleft()
         url = _clean_url(url)
-        if url in seen or not _under_tutorials(url, start_host):
+        if url in seen or not _under_allowed_public_assets(url, start_host):
             continue
         seen.add(url)
 
@@ -223,7 +273,7 @@ def crawl(start_url: str, asset_root: Path, max_mb: int, max_pages: int) -> dict
             if _is_sort_query(resolved):
                 continue
             clean = _clean_url(resolved)
-            if not _under_tutorials(clean, start_host):
+            if not _under_allowed_public_assets(clean, start_host):
                 continue
             queue.append((clean, url))
 

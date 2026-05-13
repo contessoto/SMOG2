@@ -1,3 +1,11 @@
+"""Native GRO box editing helper.
+
+This module implements the tutorial-covered subset of ``smog_editgro``:
+constructing buffered boxes, centering coordinates, and wrapping atoms through
+periodic boundaries.  It operates directly on GRO text and does not call Perl or
+SMOG2.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -18,6 +26,8 @@ def _parse_gro(path: Path):
 
 
 def _write_gro(path: Path, head: str, coords, box):
+    """Write GRO coordinates with updated positions and box dimensions."""
+
     out = [head, str(len(coords))]
     for ln, x, y, z in coords:
         out.append(f"{ln[:20]}{x:8.3f}{y:8.3f}{z:8.3f}{ln[44:]}")
@@ -26,6 +36,8 @@ def _write_gro(path: Path, head: str, coords, box):
 
 
 def main(argv: list[str]) -> int:
+    """Run native GRO centering, box construction, and PBC wrapping."""
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-g", default="smog.gro")
     p.add_argument("-og", default="smog.box.gro")

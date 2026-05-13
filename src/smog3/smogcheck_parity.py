@@ -1,3 +1,11 @@
+"""Two-stage SMOG-CHECK parity campaign runner.
+
+This validation-only module reads the SMOG-CHECK test list, generates official
+SMOG2 baselines inside the ``smogserver/smog2:stable`` Docker image, generates
+SMOG3 candidates locally with Python plus Java SCM, and compares the output
+files.  Docker and original SMOG2 are used only on the baseline side.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -58,6 +66,8 @@ BASELINE_TEMPLATE_FLAGS = {
 
 @dataclass(frozen=True)
 class SmogcheckCase:
+    """Normalized description of one entry from ``smog2.testlist``."""
+
     case_id: int
     stem: str
     modifiers: tuple[str, ...]
@@ -92,6 +102,8 @@ class SmogcheckCase:
 
 
 def parse_testlist(path: Path = TESTLIST) -> list[SmogcheckCase]:
+    """Parse the SMOG-CHECK test manifest into structured case records."""
+
     cases: list[SmogcheckCase] = []
     for raw in path.read_text().splitlines():
         line = raw.strip()
@@ -124,6 +136,8 @@ def parse_testlist(path: Path = TESTLIST) -> list[SmogcheckCase]:
 
 
 def feature_group(case: SmogcheckCase) -> str:
+    """Classify a case by the broad feature likely to explain failures."""
+
     if case.interactive or case.freecoor:
         return "freecoor/interactive"
     if case.opensmog:
@@ -510,6 +524,13 @@ def _select_cases(all_cases: list[SmogcheckCase], ns: argparse.Namespace) -> lis
 
 
 def run_campaign(cases: list[SmogcheckCase], out_root: Path, image: str) -> dict:
+    """Run a Docker-baseline/local-SMOG3 campaign and write per-case reports.
+
+    Each case gets a clean baseline directory, candidate directory, JSON report,
+    and status classification.  The returned global report is the source for
+    ``parity_all_summary.json`` and keeps failing cases grouped by feature.
+    """
+
     if shutil.which("docker") is None:
         return {"ok": False, "reason": "docker not available", "cases": []}
     if out_root.exists():
@@ -592,6 +613,8 @@ def run_campaign(cases: list[SmogcheckCase], out_root: Path, image: str) -> dict
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point for selected/range/all SMOG-CHECK campaigns."""
+
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--cases")

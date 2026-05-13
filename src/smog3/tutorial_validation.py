@@ -1,3 +1,12 @@
+"""Public SMOG tutorial validation runner.
+
+This validation-only module reads ``validation/tutorials/tutorial_manifest.yml``
+and executes tutorial model-generation workflows on two sides: official SMOG2
+inside Docker for the baseline, and local or installed SMOG3 for the candidate.
+It compares generated topology, coordinate, index, contact, and OpenSMOG XML
+files using the same documented comparator policy as SMOG-CHECK parity.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -763,6 +772,8 @@ def _new_run_root(base: Path) -> Path:
 
 
 def run_validation(ns: argparse.Namespace) -> int:
+    """Run all requested tutorial cases and write JSON/Markdown summaries."""
+
     if ns.download_first:
         fetch_script = ROOT / "scripts" / "fetch_smog_tutorial_assets.py"
         subprocess.run([sys.executable, str(fetch_script)], cwd=ROOT, check=True)
@@ -802,12 +813,16 @@ def run_validation(ns: argparse.Namespace) -> int:
 
 
 def list_cases(ns: argparse.Namespace) -> int:
+    """Print the tutorial manifest cases with their automation status."""
+
     for case in tutorial_cases(Path(ns.manifest)):
         print(f"{case.case_id}\t{case.status}\t{case.raw.get('tutorial_name')}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point for tutorial listing and comparison runs."""
+
     parser = argparse.ArgumentParser(description="Validate SMOG3 against public SMOG tutorial model-generation examples.")
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))

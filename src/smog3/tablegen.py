@@ -1,3 +1,10 @@
+"""Native table generation for SMOG Debye-Huckel/nonbonded helper workflows.
+
+The ``smog_tablegen``-compatible command writes GROMACS tabulated potentials
+from analytic parameters used in SMOG tutorials.  It is a standalone Python
+runtime helper and does not invoke Perl, SMOG2, or Docker.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -32,6 +39,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str]) -> int:
+    """Generate a GROMACS ``table.xvg`` from SMOG-style table parameters."""
+
     parser = _build_parser()
     ns, extra = parser.parse_known_args(argv)
     if ns.help or extra:

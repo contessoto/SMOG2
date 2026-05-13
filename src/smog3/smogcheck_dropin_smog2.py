@@ -1,3 +1,12 @@
+"""Drop-in ``smog2`` compatibility wrapper for the original SMOG-CHECK harness.
+
+The legacy SMOG-CHECK scripts expect to execute a binary named ``smog2`` and
+pass SMOG2-era template flags.  This module translates those harness command
+lines into Python-native SMOG3 arguments, forces ``SMOG3_LEGACY_PERL_FALLBACK=0``,
+and logs each invocation.  It is compatibility glue for validation; it does not
+call Perl, original SMOG2, or Docker.
+"""
+
 from __future__ import annotations
 
 import json
@@ -261,6 +270,14 @@ def _ensure_shadow_output(translated: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Translate one SMOG-CHECK ``smog2`` call and run native SMOG3.
+
+    The wrapper accepts legacy harness arguments, derives the matching native
+    model/contact/template flags, records the translated command in JSONL when
+    requested, and dispatches to ``smog2_native.main`` with Perl fallback
+    explicitly disabled.
+    """
+
     original = list(sys.argv[1:] if argv is None else argv)
     os.environ["SMOG3_LEGACY_PERL_FALLBACK"] = "0"
     os.environ.setdefault("SMOG3_USE_SCM_DEFAULTS", "1")

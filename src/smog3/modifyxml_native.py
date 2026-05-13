@@ -1,3 +1,11 @@
+"""Native OpenSMOG XML modification helper.
+
+This small runtime tool applies the subset of ``smog_modifyXML`` edits used by
+validation/tutorial workflows: removing force lines by group and scaling numeric
+XML attributes for matching group pairs.  It edits XML text directly to preserve
+SMOG2-compatible formatting and does not call Perl.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -6,6 +14,8 @@ from pathlib import Path
 
 
 def main(argv: list[str]) -> int:
+    """Apply group-based OpenSMOG XML removal or parameter scaling edits."""
+
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("-OpenSMOG", default="OpenSMOG.xml")
     p.add_argument("-OpenSMOGout", default="OpenSMOG.out.xml")
