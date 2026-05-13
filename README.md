@@ -22,9 +22,9 @@ wrapper that routes every SMOG-CHECK `smog2` call to Python SMOG3 code.
 
 ## Install From TestPyPI
 
-The next TestPyPI build prepared from this checkout is `0.1.0a2`. It includes
-the tutorial validation suite and the expanded `smog3 --help` text that shows
-OpenSMOG flags.
+The next TestPyPI build prepared from this checkout is `0.1.0a3`. It includes
+the completed tutorial generation parity fixes, bundled Java SCM support, and
+the expanded `smog3 --help` text that shows OpenSMOG flags.
 
 ```bash
 python3 -m pip install \
@@ -125,12 +125,13 @@ bash scripts/run_all_tutorials_compare.sh --all
 ```
 
 Downloaded tutorial data is kept under `validation/tutorials/assets/` and is not
-committed. Cases whose public template/script workflow still needs explicit
-automation are reported as `MANUAL_INPUT_REQUIRED` rather than hidden.
-Template-driven public tutorials that now run end-to-end include Coulomb,
-Debye-Huckel, custom contacts, custom nonbonded parameters, and multiple native
-contact types.  The runner still compares SMOG2 Docker outputs to SMOG3 outputs
-instead of trusting file existence.
+committed. The current source checkout has been verified at 22 model-generation
+PASS, 0 DIFF, 0 SMOG2/SMOG3 errors, 0 manual-input model-generation cases, and
+2 simulation-only `NOT_GENERATION_TEST` cases. Template-driven public tutorials
+that now run end-to-end include Coulomb, Debye-Huckel, explicit ions, custom
+contacts, custom nonbonded parameters, glycans, large-fragment extraction, and
+multiple native contact types. The runner still compares SMOG2 Docker outputs to
+SMOG3 outputs instead of trusting file existence.
 
 The validation outputs are written to ignored local directories such as
 `parity_runs/`, `smogcheck_dropin_runs/`, `real_pdb_validation/`, and

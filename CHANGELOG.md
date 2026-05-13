@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.0a3
+
+- Prepared the next TestPyPI alpha after completing public tutorial
+  model-generation parity.
+- Verified `PYTHONPATH=src pytest -q tests`: 120 passed.
+- Verified the original drop-in SMOG-CHECK harness: passed tests 1 through 115
+  using the SMOG3-backed `smog2` wrapper.
+- Verified public SMOG tutorial generation workflows: 22 PASS, 0 DIFF,
+  0 SMOG2/SMOG3 errors, 0 manual-input model-generation cases, and
+  2 simulation-only `NOT_GENERATION_TEST` cases.
+- Verified an installed wheel outside the source repository can generate AA,
+  CA, and OpenSMOG AA models for 2CI2 without invoking Perl, SMOG2, or Docker.
+- Confirmed `SCM.jar` is bundled as package data under
+  `smog3/data/tools/SCM.jar` for Java SCM contact generation.
+
 ## 0.1.0a2
 
 - Prepared a new TestPyPI alpha build after the original `0.1.0a1` package was
